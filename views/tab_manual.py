@@ -68,6 +68,46 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                 strat_df['position_diff'] = strat_df['final_signal'].diff().fillna(0)
 
                 bt_results = run_backtest(strat_df, initial_capital, pos_ratio, take_profit=global_filters['tp'], stop_loss=global_filters['sl'])
+                # --- 🚀 核心升级：明日实战指令卡片 ---
+                st.divider()
+                st.subheader("🎯 明日实战执行建议")
+
+                # 获取最后两个交易日的数据进行比对
+                last_day = bt_results.iloc[-1]
+                prev_day = bt_results.iloc[-2] if len(bt_results) > 1 else last_day
+
+                last_date_str = last_day.name.strftime('%Y-%m-%d')
+
+                c_advice, c_status = st.columns([2, 1])
+
+                with c_advice:
+                    # 情况 A：今天刚出买入信号（明天开盘买）
+                    if last_day['position_diff'] == 1:
+                        st.success(
+                            f"### 🏹 指令：【开盘买入】\n**依据**：{last_date_str} 策略发出金叉/突破信号。建议明天集合竞价或开盘阶段按计划仓位买入。")
+
+                    # 情况 B：今天刚出卖出信号（明天开盘卖）
+                    elif last_day['position_diff'] == -1:
+                        reason = last_day.get('sell_reason', '策略死叉/超买信号')
+                        st.error(
+                            f"### 🏳️ 指令：【开盘平仓】\n**依据**：{last_date_str} 触发 {reason}。明天开盘请务必清仓，落袋为安或止损避险。")
+
+                    # 情况 C：持续持仓中
+                    elif last_day['final_signal'] == 1:
+                        unrealized_pct = (last_day['收盘'] - last_day.get('buy_price',
+                                                                          last_day['收盘'])) / last_day.get('buy_price',
+                                                                                                            1)
+                        st.info(
+                            f"### 💎 指令：【继续持股】\n**依据**：当前策略信号稳定，未触及止盈止损。建议继续持仓，当前参考浮动盈亏：{unrealized_pct * 100:.2f}%。")
+
+                    # 情况 D：空仓观望
+                    else:
+                        st.write(
+                            f"### ☕ 指令：【空仓观望】\n**依据**：{last_date_str} 暂无有效买入信号或处于大盘择时屏蔽期。保持现金，等待下一次狩猎机会。")
+
+                with c_status:
+                    st.metric("最新收盘价", f"¥{last_day['收盘']:.2f}")
+                    st.metric("信号状态", "看多 (Long)" if last_day['final_signal'] == 1 else "看空 (Flat)")
 
                 m1, m2, m3, m4, m5 = st.columns(5)
                 ret = ((bt_results['strategy_equity'].iloc[-1] / initial_capital) - 1) * 100
