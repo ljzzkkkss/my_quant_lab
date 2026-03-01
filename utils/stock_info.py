@@ -86,3 +86,13 @@ def get_a_share_list():
     })
     fallback_df['display'] = fallback_df['name'] + " (" + fallback_df['symbol'] + ")"
     return fallback_df
+
+@st.cache_data
+def get_a_share_list_display():
+    """获取用于前端下拉框显示的列表"""
+    from utils.stock_info import get_a_share_list
+    df = get_a_share_list()
+    # 确保 display 列存在
+    if 'display' not in df.columns:
+        df['display'] = df['name'].astype(str) + " (" + df['symbol'].astype(str) + ")"
+    return df['display'].tolist()

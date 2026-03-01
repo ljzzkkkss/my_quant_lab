@@ -3,83 +3,184 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
-from backtest.optimizer import optimize_strategy
+from backtest.optimizer import optimize_strategy, apply_advanced_filters
+from backtest.engine import run_backtest, plot_equity_curve
+
+# 导入所有策略计算底层
+from strategies.double_ma import apply_double_ma_strategy
+from strategies.bollinger_bands import apply_bollinger_strategy
+from strategies.rsi_reversal import apply_rsi_strategy
+from strategies.macd_strategy import apply_macd_strategy
+from strategies.kdj_strategy import apply_kdj_strategy
 
 
-def render_auto_tab(symbol, start_date, end_date, initial_capital, use_macd, strategy_type):
-    st.markdown(f"### 🤖 {strategy_type} - 智能参数寻优")
+def run_single_param_backtest(raw_data, strategy_type, p1, p2, global_filters, initial_capital, pos_ratio):
+    """助手函数：运行单组参数的完整逻辑"""
+    # 1. 信号生成
+    if strategy_type == "双均线动能策略":
+        strat_df = apply_double_ma_strategy(raw_data, int(p1), int(p2), global_filters.get('use_macd'))
+    elif strategy_type == "布林带突破策略":
+        strat_df = apply_bollinger_strategy(raw_data, int(p1), float(p2))
+    elif strategy_type == "RSI极值反转策略":
+        strat_df = apply_rsi_strategy(raw_data, int(p1), int(p2))
+    elif strategy_type == "MACD趋势策略":
+        strat_df = apply_macd_strategy(raw_data, int(p1), int(p2))
+    elif strategy_type == "KDJ震荡策略":
+        strat_df = apply_kdj_strategy(raw_data, int(p1), int(p2))
 
-    # --- 1. 动态参数范围设置区 ---
-    with st.expander("🎯 自定义寻优搜索空间", expanded=True):
-        col_p1, col_p2, col_step = st.columns(3)
+    # 2. 过滤
+    index_data = get_daily_hfq_data("510300", raw_data.index[0].strftime('%Y%m%d'),
+                                    raw_data.index[-1].strftime('%Y%m%d')) if global_filters['use_index'] else None
+    strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
+    strat_df['final_signal'] = np.where(strat_df['filter_pass'], strat_df['signal'], 0)
+    strat_df['position_diff'] = strat_df['final_signal'].diff().fillna(0)
 
+    # 3. 回测
+    return run_backtest(strat_df, initial_capital, pos_ratio, take_profit=global_filters['tp'],
+                        stop_loss=global_filters['sl'])
+
+
+def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filters, strategy_type):
+    st.markdown(f"### 🤖 {strategy_type} - 参数寻优与稳定性检验")
+
+    # 💡 寻优提示说明
+    if strategy_type == "双均线动能策略":
+        st.info("💡 **寻优目标**：寻找主力均线逻辑。短线极其敏感，步长建议设为 1；长线跨度大，步长设为 5。")
+    # ... (此处省略其他策略说明，保持与上一版一致) ...
+
+    with st.expander("🎯 自定义寻优搜索空间与步长", expanded=True):
+        col_p1, col_p2 = st.columns(2)
         if strategy_type == "双均线动能策略":
             with col_p1:
-                s_range = st.slider("短期均线搜索范围", 2, 60, (5, 15))
+                s_range = st.slider("短期均线范围", 2, 60, (5, 15), key="a_ma_sr")
+                s_step = st.number_input("短期步长", 1, 10, 1, key="a_ma_ss")
             with col_p2:
-                l_range = st.slider("长期均线搜索范围", 10, 250, (20, 60))
-            with col_step:
-                step = st.number_input("均线变动步长", 1, 20, 2)
-
-            p1_param = (s_range[0], s_range[1], step)
-            p2_param = (l_range[0], l_range[1], step)
-            total_comb = len(range(p1_param[0], p1_param[1] + 1, step)) * len(range(p2_param[0], p2_param[1] + 1, step))
-
-        else:  # 布林带突破策略
+                l_range = st.slider("长期均线范围", 10, 250, (20, 60), key="a_ma_lr")
+                l_step = st.number_input("长期步长", 1, 20, 5, key="a_ma_ls")
+            p1_param, p2_param = (s_range[0], s_range[1], s_step), (l_range[0], l_range[1], l_step)
+            la, lb = "短期均线", "长期均线"
+        # ... (此处省略其他策略 UI 逻辑，保持一致并添加 la, lb 赋值) ...
+        elif strategy_type == "布林带突破策略":
             with col_p1:
-                w_range = st.slider("布林带周期范围", 5, 120, (10, 30))
-                # 【核心修改】：增加周期步长自定义输入
-                w_step = st.number_input("周期变动步长", 1, 20, 5)
+                w_range = st.slider("周期范围", 5, 120, (10, 30), key="a_boll_wr"); w_step = st.number_input("周期步长",
+                                                                                                             1, 20, 5,
+                                                                                                             key="a_boll_ws")
             with col_p2:
-                std_range = st.slider("标准差倍数范围", 1.0, 3.5, (1.5, 2.5))
-            with col_step:
-                std_step = st.number_input("标准差变动步长", 0.1, 1.0, 0.1, 0.1)
+                std_range = st.slider("标准差范围", 1.0, 3.5, (1.5, 2.5), key="a_boll_sr"); std_step = st.number_input(
+                    "标准差步长", 0.1, 1.0, 0.1, key="a_boll_ss")
+            p1_param, p2_param = (w_range[0], w_range[1], w_step), (std_range[0], std_range[1], std_step);
+            la, lb = "计算周期", "标准差倍数"
+        elif strategy_type == "RSI极值反转策略":
+            with col_p1:
+                lower_range = st.slider("抄底线范围", 10, 50, (20, 40), key="a_rsi_lr"); lower_step = st.number_input(
+                    "抄底步长", 1, 10, 2, key="a_rsi_ls")
+            with col_p2:
+                upper_range = st.slider("逃顶线范围", 50, 95, (60, 85), key="a_rsi_ur"); upper_step = st.number_input(
+                    "逃顶步长", 1, 10, 2, key="a_rsi_us")
+            p1_param, p2_param = (lower_range[0], lower_range[1], lower_step), (upper_range[0], upper_range[1],
+                                                                                upper_step);
+            la, lb = "抄底阈值", "逃顶阈值"
+        elif strategy_type == "MACD趋势策略":
+            with col_p1:
+                fast_range = st.slider("快线范围", 5, 40, (10, 20), key="a_macd_fr"); fast_step = st.number_input(
+                    "快线步长", 1, 10, 2, key="a_macd_fs")
+            with col_p2:
+                slow_range = st.slider("慢线范围", 15, 100, (20, 40), key="a_macd_sr"); slow_step = st.number_input(
+                    "慢线步长", 1, 20, 2, key="a_macd_ss")
+            p1_param, p2_param = (fast_range[0], fast_range[1], fast_step), (slow_range[0], slow_range[1], slow_step);
+            la, lb = "快线周期", "慢线周期"
+        elif strategy_type == "KDJ震荡策略":
+            with col_p1:
+                buy_range = st.slider("抄底线范围", -20, 30, (-10, 10), key="a_kdj_br"); buy_step = st.number_input(
+                    "抄底步长", 1, 10, 5, key="a_kdj_bs")
+            with col_p2:
+                sell_range = st.slider("逃顶线范围", 70, 120, (90, 110), key="a_kdj_sr"); sell_step = st.number_input(
+                    "逃顶步长", 1, 10, 5, key="a_kdj_ss")
+            p1_param, p2_param = (buy_range[0], buy_range[1], buy_step), (sell_range[0], sell_range[1], sell_step);
+            la, lb = "超卖买入线", "超买卖出线"
 
-            # 【核心修改】：应用用户输入的 w_step
-            p1_param = (w_range[0], w_range[1], w_step)
-            p2_param = (std_range[0], std_range[1], std_step)
+        # 计算总数
+        if strategy_type == "布林带突破策略":
+            total_comb = len(range(p1_param[0], p1_param[1] + 1, p1_param[2])) * len(
+                np.arange(p2_param[0], p2_param[1] + 0.01, p2_param[2]))
+        else:
+            total_comb = len(range(p1_param[0], p1_param[1] + 1, p1_param[2])) * len(
+                range(p2_param[0], p2_param[1] + 1, p2_param[2]))
 
-            total_comb = len(range(p1_param[0], p1_param[1] + 1, w_step)) * len(
-                np.arange(p2_param[0], p2_param[1] + 0.01, std_step))
+    st.divider()
+    st.subheader("🔬 稳定性体检：样本外盲测 (OOS)")
+    enable_oos = st.toggle("🛡️ 开启多参数盲测排行榜 (检验前10名真实性)", value=False, key="a_oos_toggle")
+    if enable_oos: train_ratio = st.slider("训练集占比", 0.5, 0.9, 0.7, 0.05, key="a_oos_ratio")
 
-    # --- 2. 核心操作区 ---
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
-        pos_ratio = st.number_input("寻优测试仓位", 0.1, 1.0, 1.0, 0.1, key="opt_pos")
+        pos_ratio = st.number_input("寻优单次仓位", 0.1, 1.0, 1.0, 0.1, key="a_pos")
     with c2:
-        st.write(f"📊 预计回测次数: **{int(total_comb)}** 次")
-        run_opt = st.button("🔥 开启暴力扫描", use_container_width=True, type="primary")
+        st.markdown(
+            f"<div style='margin-top: 32px;'>📊 预计计算: <strong style='color:red;'>{int(total_comb)}</strong> 个组合</div>",
+            unsafe_allow_html=True)
+    with c3:
+        st.write("");
+        run_opt = st.button("🔥 开启暴力扫描", use_container_width=True, type="primary", key="a_run")
 
     if run_opt:
-        with st.spinner('正在全速计算所有组合...'):
-            raw_data = get_daily_hfq_data(symbol, start_date, end_date)
-            if raw_data is not None and not raw_data.empty:
-                results_df, la, lb = optimize_strategy(
-                    raw_data, strategy_type, initial_capital,
-                    use_macd, pos_ratio, p1_param, p2_param
-                )
+        raw_data = get_daily_hfq_data(symbol, start_date, end_date)
+        if raw_data is None or raw_data.empty: return
 
-                if results_df is not None and not results_df.empty:
-                    # --- 3. 结果展示 ---
-                    best_row = results_df.sort_values('夏普比率', ascending=False).iloc[0]
-                    st.success(f"🏆 寻优完成！最佳参数组合：{la}={best_row[la]} / {lb}={best_row[lb]}")
+        # 划分数据集
+        if enable_oos:
+            split_idx = int(len(raw_data) * train_ratio)
+            train_raw = raw_data.iloc[:split_idx]
+            test_raw = raw_data.iloc[split_idx:]
+            st.warning(
+                f"🪓 数据已切分！【训练集】至 {train_raw.index[-1].strftime('%Y-%m-%d')} | 【测试集】从 {test_raw.index[0].strftime('%Y-%m-%d')} 至今")
+        else:
+            train_raw = raw_data
 
-                    # --- 视觉升级：正红负绿，绝对值越大颜色越深 ---
-                    max_abs_val = results_df['收益率(%)'].abs().max()
-                    if max_abs_val == 0: max_abs_val = 1
+        with st.spinner('计算训练集收益矩阵...'):
+            # 🚨 核心逻辑：寻优时使用全局定义的止盈止损
+            results_df, _, _ = optimize_strategy(train_raw, strategy_type, initial_capital, global_filters, pos_ratio,
+                                                 p1_param, p2_param, start_date, end_date)
 
-                    plot_df = results_df.pivot(index=lb, columns=la, values='收益率(%)')
+            if results_df is not None and not results_df.empty:
+                # 绘制热力图
+                max_abs = results_df['收益率(%)'].abs().max() or 1
+                plot_df = results_df.pivot(index=lb, columns=la, values='收益率(%)')
+                fig = go.Figure(
+                    data=go.Heatmap(z=plot_df.values, x=plot_df.columns, y=plot_df.index, colorscale='RdYlGn_r',
+                                    zmin=-max_abs, zmax=max_abs))
+                fig.update_layout(title="训练集参数收益分布 (红区代表参数平原，越宽越稳)", xaxis_title=la,
+                                  yaxis_title=lb)
+                st.plotly_chart(fig, use_container_width=True)
 
-                    fig = go.Figure(data=go.Heatmap(
-                        z=plot_df.values,
-                        x=plot_df.columns,
-                        y=plot_df.index,
-                        colorscale='RdYlGn_r',
-                        zmin=-max_abs_val,
-                        zmax=max_abs_val,
-                        hovertemplate=f'{la}: %{{x}}<br>{lb}: %{{y}}<br>收益率: %{{z}}%<extra></extra>'
-                    ))
-                    fig.update_layout(title="参数收益热力图 (红涨绿跌)", xaxis_title=la, yaxis_title=lb)
-                    st.plotly_chart(fig, use_container_width=True)
+                if enable_oos:
+                    st.subheader("📋 前 10 名参数 OOS 盲测排行榜")
+                    top_10 = results_df.sort_values('夏普比率', ascending=False).head(10).copy()
 
+                    oos_results = []
+                    for idx, row in top_10.iterrows():
+                        # 对前10名每一组参数进行盲测
+                        bt_test = run_single_param_backtest(raw_data, strategy_type, row[la], row[lb], global_filters,
+                                                            initial_capital, pos_ratio)
+
+                        # 仅切出测试集部分的收益
+                        test_part = bt_test.iloc[split_idx:]
+                        test_ret = ((test_part['strategy_equity'].iloc[-1] / test_part['strategy_equity'].iloc[
+                            0]) - 1) * 100
+                        test_sharpe = test_part.attrs.get('sharpe_ratio', 0)
+
+                        oos_results.append({
+                            la: row[la], lb: row[lb],
+                            "训练收益(%)": row['收益率(%)'],
+                            "盲测收益(%)": round(test_ret, 2),
+                            "盲测夏普": round(test_sharpe, 2),
+                            "状态": "✅ 通过" if test_ret > 0 else "❌ 崩盘"
+                        })
+
+                    oos_df = pd.DataFrame(oos_results)
+                    st.dataframe(oos_df.style.map(
+                        lambda x: 'color: red' if x == '✅ 通过' else 'color: green' if x == '❌ 崩盘' else '',
+                        subset=['状态']), use_container_width=True)
+                else:
+                    st.subheader("📋 全局寻优排行榜")
                     st.dataframe(results_df.sort_values('收益率(%)', ascending=False), use_container_width=True)
