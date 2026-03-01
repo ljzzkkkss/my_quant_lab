@@ -1,90 +1,89 @@
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go  # 引入丝滑的 Plotly 替换老旧的 matplotlib
+import plotly.graph_objects as go
 
 
-def run_backtest(df, initial_capital=100000.0):
+def run_backtest(df, initial_capital=100000.0, position_ratio=1.0):
     """
-    极简回测引擎：计算基准收益与策略收益
+    量化回测引擎：支持仓位管理、手续费计算、胜率及盈亏比统计
     """
-    print("-> ⚙️ 正在启动回测引擎计算账户资金...")
     bt_df = df.copy()
 
-    # 1. 计算基准收益率 (每天的真实涨跌幅)
+    # 基础收益计算
     bt_df['daily_return'] = bt_df['收盘'].pct_change()
-
-    # 2. 计算策略收益率
     bt_df['strategy_return'] = bt_df['signal'].shift(1) * bt_df['daily_return']
 
-    # 3. 计算账户资金净值曲线 (复利计算)
+    # 模拟手续费 (买入0.03%, 卖出0.08%)
+    buy_fee, sell_fee = 0.0003, 0.0008
+    bt_df['trade_cost'] = 0.0
+    bt_df.loc[bt_df['position_diff'] == 1, 'trade_cost'] = -buy_fee
+    bt_df.loc[bt_df['position_diff'] == -1, 'trade_cost'] = -sell_fee
+
+    # 应用仓位管理
+    bt_df['real_ret'] = (bt_df['strategy_return'] + bt_df['trade_cost']) * position_ratio
+
+    # 计算净值曲线
     bt_df['benchmark_equity'] = initial_capital * (1 + bt_df['daily_return']).cumprod()
-    bt_df['strategy_equity'] = initial_capital * (1 + bt_df['strategy_return']).cumprod()
+    bt_df['strategy_equity'] = initial_capital * (1 + bt_df['real_ret']).cumprod()
 
-    # 填补第一天的数据
-    bt_df.iloc[0, bt_df.columns.get_loc('benchmark_equity')] = initial_capital
-    bt_df.iloc[0, bt_df.columns.get_loc('strategy_equity')] = initial_capital
+    # 指标计算：回撤
+    bt_df['cum_max'] = bt_df['strategy_equity'].cummax()
+    bt_df['drawdown'] = (bt_df['strategy_equity'] - bt_df['cum_max']) / bt_df['cum_max']
+    max_dd = bt_df['drawdown'].min() * 100
 
-    # 4. 打印回测报告
-    final_bench = bt_df['benchmark_equity'].iloc[-1]
-    final_strat = bt_df['strategy_equity'].iloc[-1]
+    # 指标计算：夏普比率
+    daily_ret = bt_df['real_ret'].dropna()
+    sharpe = (daily_ret.mean() / daily_ret.std() * np.sqrt(252)) if daily_ret.std() != 0 else 0
 
-    bench_return = (final_bench - initial_capital) / initial_capital * 100
-    strat_return = (final_strat - initial_capital) / initial_capital * 100
+    # ==========================================
+    # 📈 核心统计：交易闭环分析 (胜率/盈亏比)
+    # ==========================================
+    trades = []
+    buy_price = 0
+    is_holding = False
 
-    print("\n" + "=" * 40)
-    print("📊 量化策略回测报告")
-    print("=" * 40)
-    print(f"初始本金:     {initial_capital:,.2f} 元")
-    print(f"基准最终资金: {final_bench:,.2f} 元 (一直持有的结果)")
-    print(f"策略最终资金: {final_strat:,.2f} 元 (双均线操作的结果)")
-    print("-" * 40)
-    print(f"基准收益率:   {bench_return:.2f}%")
-    print(f"策略收益率:   {strat_return:.2f}%")
+    for _, row in bt_df.iterrows():
+        if row['position_diff'] == 1:
+            buy_price = row['收盘'] * (1 + buy_fee)  # 计入买入成本
+            is_holding = True
+        elif row['position_diff'] == -1 and is_holding:
+            sell_price = row['收盘'] * (1 - sell_fee)  # 计入卖出成本
+            profit_pct = (sell_price - buy_price) / buy_price
+            trades.append(profit_pct)
+            is_holding = False
 
-    if strat_return > bench_return:
-        print("🏆 结论：恭喜！你的策略跑赢了死拿不动的基准！")
+    # 计算胜率
+    win_trades = [t for t in trades if t > 0]
+    loss_trades = [t for t in trades if t <= 0]
+    win_rate = (len(win_trades) / len(trades) * 100) if trades else 0
+
+    # 计算盈亏比 (平均盈利 / 平均亏损的绝对值)
+    avg_win = np.mean(win_trades) if win_trades else 0
+    avg_loss = abs(np.mean(loss_trades)) if loss_trades else 0
+    if len(loss_trades) == 0:
+        if len(win_trades) > 0:
+            # 如果全胜，盈亏比给个 999 代表无穷大，或者直接给平均盈利
+            pl_ratio = round(avg_win * 100, 2)  # 这里用盈利幅度暂代
+        else:
+            pl_ratio = 0.0
     else:
-        print("💔 结论：很遗憾，一顿操作猛如虎，不如躺平赚得多。这在震荡市很常见！")
-    print("=" * 40 + "\n")
+        pl_ratio = (avg_win / avg_loss) if avg_loss != 0 else 0
+
+    # 封装元数据
+    bt_df.attrs['max_drawdown'] = max_dd
+    bt_df.attrs['sharpe_ratio'] = sharpe
+    bt_df.attrs['win_rate'] = win_rate
+    bt_df.attrs['pl_ratio'] = pl_ratio
+    bt_df.attrs['trade_count'] = len(trades)
 
     return bt_df
 
 
-def plot_equity_curve(bt_df, title="策略收益与基准收益对比"):
-    """
-    网页交互版：画出资金增长曲线图
-    """
-    print("-> 正在生成交互式资金曲线网页...")
+def plot_equity_curve(bt_df, title="策略净值曲线"):
     fig = go.Figure()
-
-    # 画出基准线（灰色虚线）
-    fig.add_trace(go.Scatter(
-        x=bt_df.index, y=bt_df['benchmark_equity'],
-        mode='lines', name='基准资金 (一直持有)',
-        line=dict(color='gray', dash='dash', width=2)
-    ))
-
-    # 画出策略线（红色实线）
-    fig.add_trace(go.Scatter(
-        x=bt_df.index, y=bt_df['strategy_equity'],
-        mode='lines', name='策略资金 (双均线)',
-        line=dict(color='red', width=2.5)
-    ))
-
-    # 设置交互样式
-    fig.update_layout(
-        title=title,
-        xaxis_title='日期',
-        yaxis_title='账户总资金 (元)',
-        hovermode='x unified',  # 开启垂直十字光标！
-        template='plotly_white',  # 干净的主题
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)  # 图例放左上角
-    )
-
-    # 同样屏蔽周末的断层
-    dt_all = pd.date_range(start=bt_df.index[0], end=bt_df.index[-1])
-    dt_obs = [d.strftime("%Y-%m-%d") for d in bt_df.index]
-    dt_breaks = [d for d in dt_all.strftime("%Y-%m-%d").tolist() if not d in dt_obs]
-    fig.update_xaxes(rangebreaks=[dict(values=dt_breaks)])
-
-    return fig;
+    fig.add_trace(
+        go.Scatter(x=bt_df.index, y=bt_df['benchmark_equity'], name='基准收益', line=dict(color='gray', dash='dash')))
+    fig.add_trace(
+        go.Scatter(x=bt_df.index, y=bt_df['strategy_equity'], name='策略收益', line=dict(color='red', width=2)))
+    fig.update_layout(title=title, template='plotly_white', hovermode='x unified')
+    return fig
