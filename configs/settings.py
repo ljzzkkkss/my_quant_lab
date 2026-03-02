@@ -46,6 +46,38 @@ class BacktestConfig:
     ENABLECommission: bool = True #是否启用佣金
 
 @dataclass
+class MarketRules:
+    """A股市场交易规则"""
+    LIMIT_KC_CYB: float = 0.20    # 科创板、创业板涨跌停
+    LIMIT_BJ: float = 0.30        # 北交所涨跌停
+    LIMIT_MAIN: float = 0.10      # 主板涨跌停
+    LIMIT_DEFAULT: float = 0.10
+
+@dataclass
+class StrategyDefaults:
+    """策略算法相关的硬编码参数"""
+    # MACD 经典参数
+    MACD_FAST: int = 12
+    MACD_SLOW: int = 26
+    MACD_SIGNAL: int = 9
+    # RSI 经典参数
+    RSI_PERIOD: int = 14
+    # 均线
+    MA_SHORT: int = 5
+    MA_LONG: int = 20
+
+@dataclass
+class UIControlConfig:
+    """UI 控件的数值范围定义 (防止魔法数字散落在视图层)"""
+    MA_SHORT_RANGE: tuple = (2, 60, 1)   # (min, max, step)
+    MA_LONG_RANGE: tuple = (10, 250, 5)
+    BOLL_WINDOW_RANGE: tuple = (5, 120, 5)
+    BOLL_STD_RANGE: tuple = (1.0, 3.5, 0.1)
+    CAPITAL_STEP: int = 10000
+    SL_RANGE: tuple = (-50, -1, 1)      # 止损滑动条
+    TP_RANGE: tuple = (1, 100, 1)       # 止盈滑动条
+
+@dataclass
 class UIConfig:
     """UI 配置"""
     PAGE_TITLE: str = "极客量化实验室"
@@ -72,6 +104,9 @@ class ConfigManager:
         self.trading = TradingConfig()
         self.data = DataConfig()
         self.backtest = BacktestConfig()
+        self.market_rules = MarketRules()
+        self.strategy_defaults = StrategyDefaults()
+        self.ui_control = UIControlConfig()
         self.ui = UIConfig()
         self._initialized = True
 
@@ -91,3 +126,12 @@ def get_backtest_config() -> BacktestConfig:
 
 def get_ui_config() -> UIConfig:
     return ConfigManager.get_instance().ui
+
+def get_market_rules() -> MarketRules:
+    return ConfigManager.get_instance().market_rules
+
+def get_strategy_defaults() -> StrategyDefaults:
+    return ConfigManager.get_instance().strategy_defaults
+
+def get_ui_control_config() -> UIControlConfig:
+    return ConfigManager.get_instance().ui_control
