@@ -3,17 +3,19 @@ import time
 import akshare as ak
 import pandas as pd
 import streamlit as st
+from configs.settings import get_data_config
+data_conf = get_data_config()
 
-CACHE_FILE = "data/stock_list_cache.csv"
-CACHE_TTL = 86400 * 7  # 缓存有效期：7天
+CACHE_FILE = data_conf.STOCK_LIST_CACHE
+CACHE_DIR = data_conf.CACHE_DIR
+CACHE_TTL = data_conf.CACHE_TTL_DAYS * 86400  # 天数转秒数
 
 
 @st.cache_data
 def get_a_share_list():
-    """获取 A 股全市场映射 (修复了列名合并 Bug，绝对稳定版)"""
 
-    if not os.path.exists("data"):
-        os.makedirs("data")
+    if not os.path.exists(CACHE_DIR):
+        os.makedirs(CACHE_DIR)
 
     # 1. 读取本地缓存
     if os.path.exists(CACHE_FILE):

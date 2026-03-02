@@ -1,14 +1,45 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import os
+import logging
+from configs.settings import get_data_config
+data_conf = get_data_config()
+
+# ========== 日志配置 ==========
+def setup_logger():
+    """配置日志系统"""
+    os.makedirs("logs", exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("logs/quant.log", encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+
+    # 降低第三方库日志级别
+    logging.getLogger('streamlit').setLevel(logging.WARNING)
+    logging.getLogger('baostock').setLevel(logging.WARNING)
+    logging.getLogger('akshare').setLevel(logging.WARNING)
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 from utils.stock_info import get_a_share_list_display as get_all_stock_list
 from views.tab_manual import render_manual_tab
 from views.tab_auto import render_auto_tab
 from views.tab_batch import render_batch_tab
 from views.tab_portfolio import render_portfolio_tab
+from configs.settings import get_ui_config
+ui_conf = get_ui_config()
 
-st.set_page_config(page_title="极客量化实验室", layout="wide", page_icon="📈")
+st.set_page_config(
+    page_title=ui_conf.PAGE_TITLE,
+    page_icon=ui_conf.PAGE_ICON,
+    layout=ui_conf.LAYOUT_MODE
+)
 
 
 def main():
@@ -18,8 +49,8 @@ def main():
     with st.sidebar:
         st.header("⚙️ 全局设置")
         if st.button("🔄 强制更新股票代码库", use_container_width=True, key="btn_update"):
-            if os.path.exists("data/stock_list_cache.csv"):
-                os.remove("data/stock_list_cache.csv")
+            if os.path.exists(data_conf.STOCK_LIST_CACHE):
+                os.remove(data_conf.STOCK_LIST_CACHE)
             st.cache_data.clear()
             st.rerun()
 

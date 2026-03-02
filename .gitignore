@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyi
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Project specific - Data files
+config.json
+data/*
+!data/raw/
+!data/cache/
+!data/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/

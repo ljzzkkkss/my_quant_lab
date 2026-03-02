@@ -1,11 +1,24 @@
+"""
+数据获取模块
+
+从 Baostock 获取 A 股历史行情数据，支持增量缓存和重试机制。
+"""
 import os
 import json
+import time
 import pandas as pd
 import baostock as bs
 from datetime import datetime, timedelta
+from typing import Optional
+import logging
+from configs.settings import get_data_config
+data_conf = get_data_config()
+
+logger = logging.getLogger(__name__)
 
 
-def format_baostock_code(symbol: str):
+def format_baostock_code(symbol: str) -> str:
+    """转换股票代码为 Baostock 格式"""
     symbol = str(symbol).strip()
     if symbol.startswith(('6', '5')):
         return f"sh.{symbol}"
@@ -16,7 +29,8 @@ def format_baostock_code(symbol: str):
     return symbol
 
 
-def format_baostock_date(date_str):
+def format_baostock_date(date_str) -> str:
+    """格式化日期为 Baostock 要求的格式"""
     if isinstance(date_str, str) and len(date_str) == 8 and "-" not in date_str:
         return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     if isinstance(date_str, pd.Timestamp) or isinstance(date_str, datetime):
@@ -24,28 +38,35 @@ def format_baostock_date(date_str):
     return date_str
 
 
-def fetch_from_baostock(symbol, start_date, end_date):
-    """内部核心网络请求函数：增加了 ETF 的复权智能降级"""
-    bs_code = format_baostock_code(symbol)
-    bs_start = format_baostock_date(start_date)
-    bs_end = format_baostock_date(end_date)
+def _fetch_with_adjustflag(bs_code: str, bs_start: str, bs_end: str) -> Optional[pd.DataFrame]:
+    """
+    执行 Baostock 请求，支持 ETF 复权降级
 
+    参数:
+        bs_code: Baostock 格式的代码
+        bs_start: 开始日期
+        bs_end: 结束日期
+
+    返回:
+        DataFrame 或 None
+    """
     lg = bs.login()
     if lg.error_code != '0':
-        return pd.DataFrame()
+        return None
 
-    # 【第一次尝试】：请求前复权数据 (A股适用)
+    data_list = []
+
+    # 【第一次尝试】：请求前复权数据 (A 股适用)
     rs = bs.query_history_k_data_plus(
         bs_code, "date,open,close,high,low,volume",
         start_date=bs_start, end_date=bs_end, frequency="d", adjustflag="2"
     )
 
-    data_list = []
     if rs.error_code == '0':
         while rs.next():
             data_list.append(rs.get_row_data())
 
-    # 【第二次尝试】：如果拿不到数据(ETF通常不支持复权)，改用不复权重新请求！
+    # 【第二次尝试】：如果拿不到数据 (ETF 通常不支持复权)，改用不复权重新请求！
     if not data_list:
         rs = bs.query_history_k_data_plus(
             bs_code, "date,open,close,high,low,volume",
@@ -58,7 +79,7 @@ def fetch_from_baostock(symbol, start_date, end_date):
     bs.logout()
 
     if not data_list:
-        return pd.DataFrame()
+        return None
 
     df = pd.DataFrame(data_list, columns=rs.fields)
     df.rename(
@@ -72,7 +93,53 @@ def fetch_from_baostock(symbol, start_date, end_date):
     return df
 
 
-def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: str = "data"):
+def fetch_from_baostock(symbol: str, start_date, end_date, max_retries: int = 3) -> pd.DataFrame:
+    """
+    获取数据（带重试机制）
+
+    参数:
+        symbol: 股票代码
+        start_date: 开始日期
+        end_date: 结束日期
+        max_retries: 最大重试次数
+
+    返回:
+        DataFrame 或空 DataFrame
+    """
+    bs_code = format_baostock_code(symbol)
+    bs_start = format_baostock_date(start_date)
+    bs_end = format_baostock_date(end_date)
+
+    # 重试机制：指数退避
+    for attempt in range(max_retries):
+        try:
+            result = _fetch_with_adjustflag(bs_code, bs_start, bs_end)
+            if result is not None and not result.empty:
+                return result
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s...
+                logger.warning(f"获取 {symbol} 数据失败 (尝试 {attempt+1}/{max_retries}): {e}，{wait_time}秒后重试...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"获取 {symbol} 数据失败，已重试 {max_retries} 次：{e}")
+
+    return pd.DataFrame()
+
+
+def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: str = data_conf.CACHE_DIR) -> Optional[pd.DataFrame]:
+    """
+    获取前复权数据（带缓存）
+
+    参数:
+        symbol: 股票代码
+        start_date: 开始日期 (YYYYMMDD)
+        end_date: 结束日期 (YYYYMMDD)
+        cache_dir: 缓存目录
+
+    返回:
+        DataFrame 或 None
+    """
     # ==========================================
     # 🛡️ 防火墙 1 & 2：时间旅行纠正与盘中拦截
     # ==========================================
@@ -128,7 +195,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
 
         # 🚨 防火墙 3：如果首次拉取彻底没数据（断网或退市），绝对不要生成空台账，直接抛弃！
         if local_df is None or local_df.empty:
-            print(f"❌ {symbol} 彻底无数据(可能停牌或网络错误)，跳过台账建立。")
+            print(f"❌ {symbol} 彻底无数据 (可能停牌或网络错误)，跳过台账建立。")
             return None
 
         # 只有真正拿到数据，才建立安全台账
@@ -153,7 +220,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # 1. 向前补齐历史
     if req_start_dt < cache_start_cal:
         fetch_end = (cache_start_cal - timedelta(days=1)).strftime("%Y%m%d")
-        print(f"🌐 增量补齐历史: {req_start_dt.strftime('%Y%m%d')} 至 {fetch_end}...")
+        print(f"🌐 增量补齐历史：{req_start_dt.strftime('%Y%m%d')} 至 {fetch_end}...")
         older_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), fetch_end)
 
         if not older_df.empty:
@@ -166,14 +233,14 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # 2. 向后同步最新
     if req_end_dt > cache_end_cal:
         fetch_start = (cache_end_cal + timedelta(days=1)).strftime("%Y%m%d")
-        print(f"🌐 增量同步最新: {fetch_start} 至 {req_end_dt.strftime('%Y%m%d')}...")
+        print(f"🌐 增量同步最新：{fetch_start} 至 {req_end_dt.strftime('%Y%m%d')}...")
         newer_df = fetch_from_baostock(symbol, fetch_start, req_end_dt.strftime('%Y%m%d'))
 
         if not newer_df.empty:
             local_df = pd.concat([local_df, newer_df])
             needs_update = True
 
-        # 💡 核心逻辑：因为我们有防火墙1&2，这里的 req_end_dt 绝对是安全且已收盘的日期。
+        # 💡 核心逻辑：因为我们有防火墙 1&2，这里的 req_end_dt 绝对是安全且已收盘的日期。
         # 如果 newer_df 是空，只说明这两天是周末或节假日，我们理直气壮地把台账往后推！
         meta['end'] = req_end_dt.strftime("%Y-%m-%d")
 

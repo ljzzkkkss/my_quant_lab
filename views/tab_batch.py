@@ -18,6 +18,8 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
     # 双列宽阔排版
     with st.expander("🎯 寻优精度与步长设置", expanded=True):
         col_p1, col_p2 = st.columns(2)
+        p1_param = p2_param = None  # 初始化变量
+        la = lb = ""  # 初始化参数名称
 
         if strategy_type == "双均线动能策略":
             with col_p1:
@@ -44,8 +46,7 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
             with col_p2:
                 upper_range = st.slider("逃顶线范围", 50, 95, (60, 85), key="b_rsi_ur")
                 upper_step = st.number_input("👉 逃顶线步长", 1, 10, 5, key="b_rsi_us")
-            p1_param, p2_param = (lower_range[0], lower_range[1], lower_step), (upper_range[0], upper_range[1],
-                                                                                upper_step)
+            p1_param, p2_param = (lower_range[0], lower_range[1], lower_step), (upper_range[0], upper_range[1], upper_step)
 
         elif strategy_type == "MACD趋势策略":
             with col_p1:
@@ -64,6 +65,9 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                 sell_range = st.slider("逃顶线范围", 70, 120, (90, 110), key="b_kdj_sr")
                 sell_step = st.number_input("👉 逃顶步长", 1, 10, 5, key="b_kdj_ss")
             p1_param, p2_param = (buy_range[0], buy_range[1], buy_step), (sell_range[0], sell_range[1], sell_step)
+        else:
+            st.error(f"❌ 未知的策略类型：{strategy_type}")
+            return
 
     c1, c2 = st.columns([1, 1])
     with c1:
@@ -96,10 +100,10 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                     all_res.append({
                         "名称": name,
                         "最优参数": f"{best[la]} / {best[lb]}",
-                        "预期收益": best['收益率(%)'],
-                        "胜率": f"{best['胜率(%)']:.1f}%",
+                        "预期收益": best['收益率 (%)'],
+                        "胜率": f"{best['胜率 (%)']:.1f}%",
                         "盈亏比": round(best['盈亏比'], 2),
-                        "最大回撤": best['最大回撤(%)'],
+                        "最大回撤": best['最大回撤 (%)'],
                         "诊断结论": analysis_title,
                         "深度建议": advice_desc
                     })
@@ -126,8 +130,8 @@ def generate_advice(best):
     """基于机构视角的深度智能诊断算法"""
     sharpe = best['夏普比率']
     plr = best['盈亏比']
-    dd = abs(best['最大回撤(%)'])
-    wr = best['胜率(%)']
+    dd = abs(best['最大回撤 (%)'])
+    wr = best['胜率 (%)']
 
     if sharpe > 1.2 and plr > 1.5 and wr > 45:
         return "🌟 绝佳主力", f"收益风险比极佳 (夏普 {sharpe:.2f})。盈利空间对亏损风险形成压倒性优势，建议作为核心仓位跟踪。"

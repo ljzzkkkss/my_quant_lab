@@ -1,4 +1,6 @@
 import plotly.graph_objects as go
+from configs.settings import get_ui_config
+ui_conf = get_ui_config()
 
 def plot_interactive_kline(df, short_window=5, long_window=20, title="K线信号解析"):
     fig = go.Figure()
@@ -6,7 +8,7 @@ def plot_interactive_kline(df, short_window=5, long_window=20, title="K线信号
     # 🚀 核心修复：强行指定 A 股的红涨绿跌习惯
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['开盘'], high=df['最高'], low=df['最低'], close=df['收盘'], name="K线",
-        increasing_line_color='red', decreasing_line_color='green'
+        increasing_line_color=ui_conf.COLOR_UP, decreasing_line_color=ui_conf.COLOR_DOWN
     ))
 
     # 动态匹配并绘制策略指标线

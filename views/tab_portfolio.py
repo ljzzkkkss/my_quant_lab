@@ -13,6 +13,8 @@ from strategies.bollinger_bands import apply_bollinger_strategy
 from strategies.rsi_reversal import apply_rsi_strategy
 from strategies.macd_strategy import apply_macd_strategy
 from strategies.kdj_strategy import apply_kdj_strategy
+from configs.settings import get_backtest_config
+bt_conf = get_backtest_config()
 
 
 def render_portfolio_tab(display_list, start_date, end_date, initial_capital, global_filters, strategy_type):
@@ -20,7 +22,7 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
     def calculate_performance_metrics(df, initial_cap):
         if df.empty: return {}
         total_ret = (df['total_value'].iloc[-1] / initial_cap) - 1
-        ann_ret = (1 + total_ret) ** (252 / len(df)) - 1
+        ann_ret = (1 + total_ret) ** (bt_conf.TRADING_DAYS_PER_YEAR / len(df)) - 1
         df['cum_max'] = df['total_value'].cummax()
         df['drawdown'] = (df['total_value'] - df['cum_max']) / df['cum_max']
         max_dd = df['drawdown'].min()

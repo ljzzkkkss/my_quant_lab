@@ -9,7 +9,8 @@ from strategies.kdj_strategy import apply_kdj_strategy
 from backtest.engine import run_backtest, plot_equity_curve
 from backtest.optimizer import apply_advanced_filters
 from components.charts import plot_interactive_kline
-
+from configs.settings import get_backtest_config
+bt_conf = get_backtest_config()
 
 def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filters, strategy_type):
     st.markdown(f"### 🎛️ {strategy_type} - 手动深度回测")
@@ -61,7 +62,7 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                 elif strategy_type == "KDJ震荡策略":
                     strat_df = apply_kdj_strategy(raw_data, p1, p2)
 
-                index_data = get_daily_hfq_data("510300", start_date, end_date) if global_filters['use_index'] else None
+                index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters['use_index'] else None
                 strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
 
                 strat_df['final_signal'] = np.where(strat_df['filter_pass'], strat_df['signal'], 0)

@@ -232,6 +232,5 @@ MIT License
 
 Made with ❤️ by BitStudio
 
-本项目使用了谷歌gemini辅助编码
-本项目使用了谷歌gemini辅助编码
+本项目使用了谷歌gemini和阿里千问
 </div>
