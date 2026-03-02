@@ -7,12 +7,10 @@ from strategies.base import StrategyRegistry
 
 
 def render_batch_tab(display_list, start_date, end_date, initial_capital, global_filters, strategy_type):
-    st.markdown(f"### 📡 {strategy_type} - 暴力寻优雷达")
+    st.markdown(f"### 📡 {strategy_type} - 雷达全景批量寻优")
 
     strategy = StrategyRegistry.get(strategy_type)
-    if not strategy:
-        st.error("策略未注册！")
-        return
+    if not strategy: return
 
     st.info(
         "💡 **批量诊断提示**：本功能将对下方选定的多只股票执行**并行扫描**。基于最优参数下的夏普比率、盈亏比给出机构级的**资金分配诊断建议**。")
@@ -20,58 +18,75 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
     selected_stocks = st.multiselect("🗃️ 监控标的池", display_list, default=display_list[:3] if display_list else [],
                                      key="b_pool")
 
-    with st.expander("🎯 寻优精度与步长设置", expanded=True):
-        opt_params = {k: v for k, v in strategy.params.items() if not isinstance(v.default, bool)}
-        bool_params = {k: v for k, v in strategy.params.items() if isinstance(v.default, bool)}
+    opt_keys = []
+    grid_values = []
+    dynamic_dims = []  # 记录哪些参数是动态扫描的
 
-        opt_keys = list(opt_params.keys())[:2]
-        if len(opt_keys) < 2:
-            st.warning("该策略参数不足，无法雷达扫描。")
-            return
+    with st.expander("🎯 全维寻优搜索空间与参数设置", expanded=True):
+        st.write("勾选 `[参与多维寻优]` 将对该股票池构建对应维度的网格扫描，未勾选的作为静态常量。")
 
-        col_p1, col_p2 = st.columns(2)
-        grid_values = []
+        for key, p_def in strategy.params.items():
+            desc = p_def.description or key
 
-        for i, key in enumerate(opt_keys):
-            p_def = opt_params[key]
-            with (col_p1 if i == 0 else col_p2):
-                desc = p_def.description or key
-                def_min = p_def.min_val if p_def.min_val is not None else int(p_def.default * 0.5)
-                def_max = p_def.max_val if p_def.max_val is not None else int(p_def.default * 2.0)
+            # 布尔型参数（只能作为静态开关）
+            if isinstance(p_def.default, bool):
+                val = st.toggle(f"🛠️ {desc}", value=p_def.default, key=f"b_{key}")
+                if hasattr(p_def, 'impact') and p_def.impact:
+                    st.caption(f"💡 *影响：{p_def.impact}*")
+                opt_keys.append(key)
+                grid_values.append([val])
+                continue
 
-                if isinstance(p_def.default, float):
-                    p_range = st.slider(f"{desc} 范围", float(def_min), float(def_max),
-                                        (float(p_def.default * 0.8), float(p_def.default * 1.2)), key=f"b_r_{key}")
-                    p_step = st.number_input(f"👉 {desc} 步长", 0.01, 1.0, float(p_def.step), key=f"b_s_{key}")
-                    grid_values.append(list(np.arange(p_range[0], p_range[1] + p_step * 0.1, p_step)))
-                else:
-                    p_range = st.slider(f"{desc} 范围", int(def_min), int(def_max),
-                                        (int(p_def.default * 0.8), int(p_def.default * 1.2)), key=f"b_r_{key}")
-                    p_step = st.number_input(f"👉 {desc} 步长", 1, max(10, int((def_max - def_min) / 5)),
-                                             int(p_def.step), key=f"b_s_{key}")
-                    grid_values.append(list(range(p_range[0], p_range[1] + 1, p_step)))
+            # 数值型参数
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([1.5, 1, 1.5])
+                with c1:
+                    st.markdown(f"**{desc}**")
+                    if hasattr(p_def, 'impact') and p_def.impact:
+                        st.caption(f"💡 *{p_def.impact}*")
+                with c2:
+                    # 默认前两个参数勾选参与寻优
+                    is_opt = st.checkbox("参与多维寻优", value=(len(dynamic_dims) < 2), key=f"b_chk_{key}")
+                with c3:
+                    if is_opt:
+                        dynamic_dims.append(desc)
+                        def_min = p_def.min_val if p_def.min_val is not None else int(p_def.default * 0.5)
+                        def_max = p_def.max_val if p_def.max_val is not None else int(p_def.default * 2.0)
+                        if isinstance(p_def.default, float):
+                            p_range = st.slider(f"范围", float(def_min), float(def_max),
+                                                (float(p_def.default * 0.8), float(p_def.default * 1.2)),
+                                                key=f"b_r_{key}", label_visibility="collapsed")
+                            p_step = st.number_input(f"步长", 0.01, 1.0, float(p_def.step), key=f"b_s_{key}",
+                                                     label_visibility="collapsed")
+                            grid_values.append(list(np.arange(p_range[0], p_range[1] + p_step * 0.1, p_step)))
+                        else:
+                            p_range = st.slider(f"范围", int(def_min), int(def_max),
+                                                (int(p_def.default * 0.8), int(p_def.default * 1.2)), key=f"b_r_{key}",
+                                                label_visibility="collapsed")
+                            p_step = st.number_input(f"步长", 1, max(10, int((def_max - def_min) / 5)), int(p_def.step),
+                                                     key=f"b_s_{key}", label_visibility="collapsed")
+                            grid_values.append(list(range(p_range[0], p_range[1] + 1, p_step)))
+                    else:
+                        val = st.number_input(f"静态值", value=p_def.default, key=f"b_v_{key}",
+                                              label_visibility="collapsed")
+                        grid_values.append([val])
+                opt_keys.append(key)
 
-        # 🚀 同理渲染静态开关
-        if bool_params:
-            st.divider()
-            st.write("🛠️ **静态策略开关** (应用到全部标的测试)")
-            bool_cols = st.columns(len(bool_params))
-            for i, (p_name, p_def) in enumerate(bool_params.items()):
-                with bool_cols[i]:
-                    val = st.toggle(p_def.description or p_name, value=p_def.default, key=f"b_{strategy_type}_{p_name}")
-                    opt_keys.append(p_name)
-                    grid_values.append([val])
+        total_comb = np.prod([len(g) for g in grid_values])
 
     c1, c2 = st.columns([1, 1])
     with c1:
         pos_ratio = st.number_input("单次扫描测试仓位", 0.1, 1.0, 0.8, key="b_pos")
     with c2:
-        st.write(""); run_opt = st.button("📡 启动全量寻优扫描", use_container_width=True, type="primary", key="b_run")
+        st.markdown(
+            f"<div style='margin-top: 32px;'>预计单票扫描：<strong style='color:red;'>{total_comb}</strong> 个组合</div>",
+            unsafe_allow_html=True)
+
+    run_opt = st.button("📡 启动全量寻优扫描", use_container_width=True, type="primary", key="b_run")
 
     if run_opt:
         if not selected_stocks:
-            st.warning("请选择股票！")
-            return
+            return st.warning("请选择股票！")
 
         all_res = []
         prog = st.progress(0)
@@ -82,7 +97,8 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
             raw = get_daily_hfq_data(sym, start_date, end_date)
 
             if raw is not None and not raw.empty:
-                res_df, la, lb = optimize_strategy(
+                # 🚀 获取 N 维寻优结果和描述映射
+                res_df, desc_map = optimize_strategy(
                     raw, strategy_type, initial_capital, global_filters, pos_ratio,
                     opt_keys, grid_values, start_date, end_date
                 )
@@ -91,10 +107,18 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                     best = res_df.sort_values('夏普比率', ascending=False).iloc[0]
                     analysis_title, advice_desc = generate_advice(best)
 
+                    # 🚀 智能拼接所有的最优动态参数维度
+                    valid_dims = [d for d in dynamic_dims if d in res_df.columns]
+                    if valid_dims:
+                        best_params_str = " | ".join([f"{d}: {best[d]}" for d in valid_dims])
+                    else:
+                        best_params_str = "全部使用静态参数"
+
                     all_res.append({
                         "名称": name,
-                        "最优参数": f"{best[la]} / {best[lb]}",
+                        "🏆 最优参数": best_params_str,
                         "预期收益": best['收益率 (%)'],
+                        "夏普比率": best['夏普比率'],
                         "胜率": f"{best['胜率 (%)']:.1f}%",
                         "盈亏比": round(best['盈亏比'], 2),
                         "最大回撤": best['最大回撤 (%)'],

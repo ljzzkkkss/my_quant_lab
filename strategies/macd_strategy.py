@@ -85,7 +85,8 @@ class MACDStrategy(Strategy):
             min_val=5,
             max_val=40,
             step=2,
-            description='快线 EMA 周期'
+            description='快线 EMA 周期',
+            impact='调小：对短期价格变化极其敏感，跟风快，但容易被庄家骗线。'
         )
         self.register_param(
             name='slow_period',
@@ -93,7 +94,8 @@ class MACDStrategy(Strategy):
             min_val=15,
             max_val=100,
             step=2,
-            description='慢线 EMA 周期'
+            description='慢线 EMA 周期',
+            impact='大趋势的锚点。与快线差距越大，MACD柱子越平稳，但也越滞后。'
         )
         self.register_param(
             name='signal_period',
@@ -101,7 +103,8 @@ class MACDStrategy(Strategy):
             min_val=5,
             max_val=20,
             step=1,
-            description='信号线周期'
+            description='信号线周期',
+            impact='调小：金叉和死叉更容易发生，交易频率增加。'
         )
 
     @property

@@ -84,7 +84,6 @@ class DoubleMaStrategy(Strategy):
         self.short_window = short_window
         self.long_window = long_window
         self.use_macd_filter = use_macd_filter
-
         # 注册参数
         self.register_param(
             name='short_window',
@@ -92,7 +91,8 @@ class DoubleMaStrategy(Strategy):
             min_val=2,
             max_val=60,
             step=1,
-            description='短期均线周期'
+            description='短期均线周期',
+            impact='调小：反应极快，能吃到鱼头，但极易被骗线；调大：过滤震荡杂波，但入场滞后。'
         )
         self.register_param(
             name='long_window',
@@ -100,12 +100,14 @@ class DoubleMaStrategy(Strategy):
             min_val=10,
             max_val=250,
             step=5,
-            description='长期均线周期'
+            description='长期均线周期',
+            impact='作为多空分水岭。调小：交易频率大幅增加；调大：适合捕捉长牛，但可能承受极大的利润回撤。'
         )
         self.register_param(
             name='use_macd_filter',
             default=True,
-            description='是否启用 MACD 动能过滤'
+            description='是否启用 MACD 动能过滤',
+            impact='开启后可过滤 40% 的无效弱势震荡死叉，但可能在极速拉升的妖股上踏空。'
         )
 
     @property

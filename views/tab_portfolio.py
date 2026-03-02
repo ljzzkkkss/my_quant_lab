@@ -7,7 +7,6 @@ from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import apply_advanced_filters
 from backtest.engine import run_portfolio_backtest
 
-# 🚀 仅保留注册表导入，删除所有具体策略模块的硬编码导入
 from strategies.base import StrategyRegistry
 from configs.settings import get_backtest_config
 
@@ -38,17 +37,50 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
 
     st.markdown(f"### 🧺 {strategy_type} - 多股轮动实战实验室")
 
-    # 🚀 动态获取策略类
     strategy = StrategyRegistry.get(strategy_type)
     if not strategy:
         st.error("策略未注册！")
         return
 
-    with st.expander("🎯 账户与动态仓位配置", expanded=True):
-        c_l, c_m, c_r = st.columns([2, 1, 1])
+    # 🚀 新增 1：开放自定义策略参数
+    with st.container(border=True):
+        st.subheader("⚙️ 策略底层参数 (自定义)")
+        param_values = {}
+        num_params = {k: v for k, v in strategy.params.items() if not isinstance(v.default, bool)}
+        bool_params = {k: v for k, v in strategy.params.items() if isinstance(v.default, bool)}
+
+        if num_params:
+            num_cols = st.columns(len(num_params))
+            for i, (p_name, p_def) in enumerate(num_params.items()):
+                with num_cols[i]:
+                    step = p_def.step if p_def.step else 1
+                    min_val = type(p_def.default)(p_def.min_val) if p_def.min_val is not None else None
+                    max_val = type(p_def.default)(p_def.max_val) if p_def.max_val is not None else None
+                    param_values[p_name] = st.number_input(
+                        p_def.description or p_name,
+                        min_value=min_val, max_value=max_val, value=p_def.default, step=step,
+                        key=f"p_{strategy_type}_{p_name}"
+                    )
+
+        if bool_params:
+            st.write("")
+            bool_cols = st.columns(len(bool_params))
+            for i, (p_name, p_def) in enumerate(bool_params.items()):
+                with bool_cols[i]:
+                    param_values[p_name] = st.toggle(
+                        f"🛠️ {p_def.description or p_name}", value=p_def.default,
+                        key=f"p_{strategy_type}_{p_name}"
+                    )
+
+    # 🚀 新增 2：增加资金分配模型选项
+    with st.expander("🎯 账户与资金分配模型", expanded=True):
+        c_l, c_m, c_r, c_4 = st.columns([2, 1, 1.5, 1])
         with c_l: selected_pool = st.multiselect("选取轮动池", display_list, default=display_list[:5], key="p_pool")
-        with c_m: max_pos = st.slider("最大持仓槽位", 1, 10, 5, key="p_max_pos")
-        with c_r: is_dynamic = st.toggle("开启动态复利", value=True)
+        with c_m: max_pos = st.slider("最大持仓数", 1, 10, 5, key="p_max_pos")
+        with c_r: alloc_method = st.selectbox("资金分配模型", ["等权资金模型", "ATR 风险平价模型"], key="p_alloc")
+        with c_4:
+            st.write("")
+            is_dynamic = st.toggle("开启动态复利", value=True)
 
     if st.button("🚀 启动全量轮动回测", type="primary", use_container_width=True):
         if not selected_pool:
@@ -59,17 +91,14 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
         prog = st.progress(0)
         status = st.empty()
 
-        # 🚀 提取策略默认参数，作为组合回测的基础参数
-        param_dict = {k: v.default for k, v in strategy.params.items()}
-
         for i, disp in enumerate(selected_pool):
             sym = disp.split('(')[-1].replace(')', '').strip()
             status.text(f"正在准备信号: {sym}...")
             raw = get_daily_hfq_data(sym, start_date, end_date)
             if raw is None or raw.empty: continue
 
-            # 🚀 彻底解耦：统一使用动态接口调用
-            df = strategy.generate_signals(raw, **param_dict)
+            # 🚀 采用前端面板收集到的动态参数 (param_values) 而非默认参数
+            df = strategy.generate_signals(raw, **param_values)
             df = apply_advanced_filters(df, None, global_filters)
 
             df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)
@@ -80,16 +109,17 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
             prog.progress((i + 1) / len(selected_pool))
 
         if all_data_for_bt:
-            # 🚀 将全局设置一次性传入组合回测引擎
+            # 🚀 传入资金分配模型参数
             res_df, details_df, log_df = run_portfolio_backtest(
-                all_data_for_bt, initial_capital, max_pos, global_filters, dynamic_sizing=is_dynamic
+                all_data_for_bt, initial_capital, max_pos, global_filters,
+                dynamic_sizing=is_dynamic, allocation_method=alloc_method
             )
             st.session_state['p_res'] = res_df
             st.session_state['p_details'] = details_df
             st.session_state['p_log'] = log_df
             st.rerun()
 
-    # --- 📊 结果展示区保持原样 ---
+    # --- 📊 结果展示区 ---
     if 'p_res' in st.session_state:
         res = st.session_state['p_res']
         metrics = calculate_performance_metrics(res, initial_capital)

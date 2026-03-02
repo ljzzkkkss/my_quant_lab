@@ -95,41 +95,45 @@ def _evaluate_single_param(
     except Exception:
         return None
 
+
 def optimize_strategy(
-    raw_data: pd.DataFrame, strategy_type: str, initial_capital: float,
-    global_filters: Dict, position_ratio: float,
-    param_grid_keys: List[str], param_grid_values: List[List[Any]],
-    start_date: str, end_date: str,
-    use_parallel: bool = True, max_workers: Optional[int] = None,
-    progress_callback: Optional[Callable[[float], None]] = None
-) -> Tuple[Optional[pd.DataFrame], str, str]:
+        raw_data: pd.DataFrame, strategy_type: str, initial_capital: float,
+        global_filters: Dict, position_ratio: float,
+        param_grid_keys: List[str], param_grid_values: List[List[Any]],
+        start_date: str, end_date: str,
+        use_parallel: bool = True, max_workers: Optional[int] = None,
+        progress_callback: Optional[Callable[[float], None]] = None
+) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
     from utils.data_fetcher import get_daily_hfq_data
+    import itertools
 
-    index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get('use_index') else None
+    index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get(
+        'use_index') else None
 
-    # 🚀 动态生成网格空间 (支持任意维度)
+    # 🚀 真正的 N 维网格笛卡尔积
     combinations = list(itertools.product(*param_grid_values))
 
-    # 获取需要作图的两个坐标系名称
-    la = StrategyRegistry.get(strategy_type).params[param_grid_keys[0]].description or param_grid_keys[0]
-    lb = StrategyRegistry.get(strategy_type).params[param_grid_keys[1]].description or param_grid_keys[1]
+    # 获取参数的中文描述映射
+    strat_instance = StrategyRegistry.get(strategy_type)
+    desc_map = {k: (strat_instance.params[k].description or k) for k in param_grid_keys}
 
-    # 添加基础的过滤规则：如果是同一类型的参数(如长短期)，通常要求前者 < 后者
     valid_combinations = []
     for combo in combinations:
-        # 如果是经典两参数，且默认值有大小区分，则应用大小拦截过滤（如快线<慢线）
-        if len(combo) == 2:
-            default_1 = StrategyRegistry.get(strategy_type).params[param_grid_keys[0]].default
-            default_2 = StrategyRegistry.get(strategy_type).params[param_grid_keys[1]].default
-            if default_1 < default_2 and combo[0] >= combo[1]:
-                continue
-        valid_combinations.append({param_grid_keys[i]: val for i, val in enumerate(combo)})
+        p_dict = {param_grid_keys[i]: val for i, val in enumerate(combo)}
+        # 基础的冲突过滤启发式（防止无意义计算）
+        if 'short_window' in p_dict and 'long_window' in p_dict and p_dict['short_window'] >= p_dict[
+            'long_window']: continue
+        if 'fast_period' in p_dict and 'slow_period' in p_dict and p_dict['fast_period'] >= p_dict[
+            'slow_period']: continue
+        if 'lower_bound' in p_dict and 'upper_bound' in p_dict and p_dict['lower_bound'] >= p_dict[
+            'upper_bound']: continue
+
+        valid_combinations.append(p_dict)
 
     if not valid_combinations:
-        return None, la, lb
+        return None, desc_map
 
     results = []
-
     if use_parallel:
         num_workers = max_workers or (cpu_count() - 1) or 1
         eval_func = partial(
@@ -148,17 +152,18 @@ def optimize_strategy(
     else:
         total = len(valid_combinations)
         for i, p_dict in enumerate(valid_combinations):
-            result = _evaluate_single_param(p_dict, strategy_type, raw_data, index_data, global_filters, initial_capital, position_ratio)
+            result = _evaluate_single_param(p_dict, strategy_type, raw_data, index_data, global_filters,
+                                            initial_capital, position_ratio)
             if result: results.append(result)
             if progress_callback: progress_callback((i + 1) / total)
 
     if not results:
-        return pd.DataFrame(), la, lb
+        return pd.DataFrame(), desc_map
 
     result_df = pd.DataFrame(results).fillna(0)
-    # 替换列名为中文描述以便于展示
-    result_df = result_df.rename(columns={param_grid_keys[0]: la, param_grid_keys[1]: lb})
-    return result_df, la, lb
+    # 替换列名为中文描述，方便后续展示与画图
+    result_df = result_df.rename(columns=desc_map)
+    return result_df, desc_map
 
 def optimize_strategy_sequential(
     raw_data: pd.DataFrame, strategy_type: str, initial_capital: float,

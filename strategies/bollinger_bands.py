@@ -81,7 +81,8 @@ class BollingerBandsStrategy(Strategy):
             min_val=5,
             max_val=120,
             step=5,
-            description='布林带计算周期'
+            description='布林带计算周期',
+            impact='计算均线的基准。调小：反应更灵敏，但假突破极多；调大：趋势更稳固，但会严重错过第一波起爆点。'
         )
         self.register_param(
             name='std_dev',
@@ -89,7 +90,8 @@ class BollingerBandsStrategy(Strategy):
             min_val=1.0,
             max_val=3.5,
             step=0.1,
-            description='标准差倍数'
+            description='标准差倍数',
+            impact='定义通道宽度的乘数。调小：频繁开仓且假信号极多；调大：专抓真正的极端异动，但可能长年等不到一次开仓。'
         )
 
     @property

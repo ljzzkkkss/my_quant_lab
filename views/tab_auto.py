@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
+import plotly.express as px
 from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import optimize_strategy, apply_advanced_filters
 from backtest.engine import run_backtest, plot_equity_curve
@@ -34,65 +35,71 @@ def run_single_param_backtest(raw_data, strategy_type, param_dict, global_filter
 
 
 def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filters, strategy_type):
-    st.markdown(f"### 🤖 {strategy_type} - 参数寻优与稳定性检验")
+    st.markdown(f"### 🤖 {strategy_type} - 全维参数空间寻优")
 
     strategy = StrategyRegistry.get(strategy_type)
-    if not strategy:
-        st.error("策略未注册！")
-        return
+    if not strategy: return
 
-    st.info(f"💡 **寻优目标**：{strategy.description}")
+    opt_keys = []
+    grid_values = []
+    dynamic_dims = []  # 记录哪些参数是动态扫描的（用于画图）
 
-    with st.expander("🎯 自定义寻优搜索空间与步长", expanded=True):
-        # 🚀 分离数值型(网格寻优轴)与布尔型(静态设置项)
-        opt_params = {k: v for k, v in strategy.params.items() if not isinstance(v.default, bool)}
-        bool_params = {k: v for k, v in strategy.params.items() if isinstance(v.default, bool)}
+    with st.expander("🎯 寻优搜索空间与参数调校指南", expanded=True):
+        st.info(
+            "💡 **全维扫描说明**：勾选下方 `[参与多维寻优]` 的参数将构建网格进行全景扫描。寻优维度越多，计算呈指数级增长。未勾选的将作为静态常量。")
 
-        opt_keys = list(opt_params.keys())[:2]
-        if len(opt_keys) < 2:
-            st.warning("该策略可调数值参数不足2个，无法进行二维网格寻优。")
-            return
+        for key, p_def in strategy.params.items():
+            desc = p_def.description or key
 
-        col_p1, col_p2 = st.columns(2)
-        grid_values = []
+            # 渲染布尔型（只能作为静态常量）
+            if isinstance(p_def.default, bool):
+                val = st.toggle(f"🛠️ {desc}", value=p_def.default, key=f"a_{key}")
+                if p_def.impact: st.caption(f"💡 *影响：{p_def.impact}*")
+                opt_keys.append(key)
+                grid_values.append([val])
+                continue
 
-        for i, key in enumerate(opt_keys):
-            p_def = opt_params[key]
-            with (col_p1 if i == 0 else col_p2):
-                desc = p_def.description or key
-                def_min = p_def.min_val if p_def.min_val is not None else int(p_def.default * 0.5)
-                def_max = p_def.max_val if p_def.max_val is not None else int(p_def.default * 2.0)
+            # 渲染数值型
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([1.5, 1, 1.5])
+                with c1:
+                    st.markdown(f"**{desc}**")
+                    if hasattr(p_def, 'impact') and p_def.impact:
+                        st.caption(f"💡 *{p_def.impact}*")
+                with c2:
+                    # 默认让前两个参数参与寻优
+                    is_opt = st.checkbox("参与多维寻优扫描", value=(len(dynamic_dims) < 2), key=f"chk_{key}")
+                with c3:
+                    if is_opt:
+                        dynamic_dims.append(desc)
+                        def_min = p_def.min_val if p_def.min_val is not None else int(p_def.default * 0.5)
+                        def_max = p_def.max_val if p_def.max_val is not None else int(p_def.default * 2.0)
+                        if isinstance(p_def.default, float):
+                            p_range = st.slider(f"范围", float(def_min), float(def_max),
+                                                (float(p_def.default * 0.8), float(p_def.default * 1.2)),
+                                                key=f"r_{key}", label_visibility="collapsed")
+                            p_step = st.number_input(f"步长", 0.01, 1.0, float(p_def.step), key=f"s_{key}",
+                                                     label_visibility="collapsed")
+                            grid_values.append(list(np.arange(p_range[0], p_range[1] + p_step * 0.1, p_step)))
+                        else:
+                            p_range = st.slider(f"范围", int(def_min), int(def_max),
+                                                (int(p_def.default * 0.8), int(p_def.default * 1.2)), key=f"r_{key}",
+                                                label_visibility="collapsed")
+                            p_step = st.number_input(f"步长", 1, max(10, int((def_max - def_min) / 5)), int(p_def.step),
+                                                     key=f"s_{key}", label_visibility="collapsed")
+                            grid_values.append(list(range(p_range[0], p_range[1] + 1, p_step)))
+                    else:
+                        val = st.number_input(f"静态值", value=p_def.default, key=f"v_{key}",
+                                              label_visibility="collapsed")
+                        grid_values.append([val])
+                opt_keys.append(key)
 
-                if isinstance(p_def.default, float):
-                    p_range = st.slider(f"{desc} 范围", float(def_min), float(def_max),
-                                        (float(p_def.default * 0.8), float(p_def.default * 1.2)), key=f"a_r_{key}")
-                    p_step = st.number_input(f"{desc} 步长", 0.01, 1.0, float(p_def.step), key=f"a_s_{key}")
-                    grid_values.append(list(np.arange(p_range[0], p_range[1] + p_step * 0.1, p_step)))
-                else:
-                    p_range = st.slider(f"{desc} 范围", int(def_min), int(def_max),
-                                        (int(p_def.default * 0.8), int(p_def.default * 1.2)), key=f"a_r_{key}")
-                    p_step = st.number_input(f"{desc} 步长", 1, max(10, int((def_max - def_min) / 5)), int(p_def.step),
-                                             key=f"a_s_{key}")
-                    grid_values.append(list(range(p_range[0], p_range[1] + 1, p_step)))
-
-        # 🚀 渲染静态策略开关，并通过“单元素列表”巧妙注入到网格空间中！
-        if bool_params:
-            st.divider()
-            st.write("🛠️ **静态策略开关** (应用到所有寻优组合)")
-            bool_cols = st.columns(len(bool_params))
-            for i, (p_name, p_def) in enumerate(bool_params.items()):
-                with bool_cols[i]:
-                    val = st.toggle(p_def.description or p_name, value=p_def.default, key=f"a_{strategy_type}_{p_name}")
-                    opt_keys.append(p_name)
-                    grid_values.append([val])  # 注入到笛卡尔积中，不增加计算量
-
-        total_comb = len(grid_values[0]) * len(grid_values[1])
+        total_comb = np.prod([len(g) for g in grid_values])
 
     st.divider()
     st.subheader("🔬 稳定性体检：样本外盲测 (OOS)")
-    enable_oos = st.toggle("🛡️ 开启多参数盲测排行榜 (检验前 10 名真实性)", value=False, key="a_oos_toggle")
-    if enable_oos:
-        train_ratio = st.slider("训练集占比", 0.5, 0.9, 0.7, 0.05, key="a_oos_ratio")
+    enable_oos = st.toggle("🛡️ 开启多参数盲测排行榜", value=False, key="a_oos_toggle")
+    if enable_oos: train_ratio = st.slider("训练集占比", 0.5, 0.9, 0.7, 0.05, key="a_oos_ratio")
 
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
@@ -102,75 +109,76 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
             f"<div style='margin-top: 32px;'>📊 预计扫描：<strong style='color:red;'>{total_comb}</strong> 个网格点</div>",
             unsafe_allow_html=True)
     with c3:
-        st.write("");
-        run_opt = st.button("🔥 开启暴力扫描", use_container_width=True, type="primary", key="a_run")
+        st.write(""); run_opt = st.button("🔥 开启暴力扫描", use_container_width=True, type="primary", key="a_run")
 
     if run_opt:
         raw_data = get_daily_hfq_data(symbol, start_date, end_date)
-        if raw_data is None or raw_data.empty:
-            st.error("❌ 无法获取数据")
-            return
+        if raw_data is None or raw_data.empty: return st.error("❌ 无法获取数据")
 
-        if enable_oos:
-            split_idx = int(len(raw_data) * train_ratio)
-            train_raw = raw_data.iloc[:split_idx]
-            test_raw = raw_data.iloc[split_idx:]
-            st.warning(
-                f"🪓 数据已切分！【训练集】至 {train_raw.index[-1].strftime('%Y-%m-%d')} | 【测试集】从 {test_raw.index[0].strftime('%Y-%m-%d')} 至今")
-        else:
-            train_raw = raw_data
-            split_idx = 0
+        train_raw = raw_data.iloc[:int(len(raw_data) * train_ratio)] if enable_oos else raw_data
+        split_idx = len(train_raw) if enable_oos else 0
 
         with st.spinner('建立多进程计算池...'):
             progress_bar = st.progress(0, text="🚀 正在多进程扫描参数空间...")
-
-            def update_progress(p):
-                progress_bar.progress(p, text=f"扫描进度: {int(p * 100)}%")
-
-            results_df, la, lb = optimize_strategy(
+            results_df, desc_map = optimize_strategy(
                 train_raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                opt_keys, grid_values, start_date, end_date, progress_callback=update_progress
+                opt_keys, grid_values, start_date, end_date,
+                progress_callback=lambda p: progress_bar.progress(p, text=f"扫描进度: {int(p * 100)}%")
             )
             progress_bar.empty()
 
             if results_df is None or results_df.empty or '收益率 (%)' not in results_df.columns:
-                st.error("❌ 参数寻优失败，未产生有效交易")
-                return
+                return st.error("❌ 参数寻优失败，可能未产生有效交易")
 
-            max_abs = results_df['收益率 (%)'].abs().max() or 1
-            plot_df = results_df.pivot(index=lb, columns=la, values='收益率 (%)')
-            fig = go.Figure(data=go.Heatmap(z=plot_df.values, x=plot_df.columns, y=plot_df.index, colorscale='RdYlGn_r',
-                                            zmin=-max_abs, zmax=max_abs))
-            fig.update_layout(title="训练集参数收益分布 (红区代表参数平原，越宽越稳)", xaxis_title=la, yaxis_title=lb)
-            st.plotly_chart(fig, use_container_width=True)
+            st.markdown("### 🗺️ 全维参数雷达地形图")
+            # 🚀 根据寻优维度的数量，智能渲染图表类型！
+            valid_dims = [d for d in dynamic_dims if d in results_df.columns]
+
+            if len(valid_dims) == 1:
+                # 1维：折线图
+                fig = px.line(results_df, x=valid_dims[0], y='收益率 (%)', title="单参数收益率曲线", markers=True)
+                st.plotly_chart(fig, use_container_width=True)
+            elif len(valid_dims) == 2:
+                # 2维：热力图
+                plot_df = results_df.pivot(index=valid_dims[1], columns=valid_dims[0], values='收益率 (%)')
+                max_abs = results_df['收益率 (%)'].abs().max() or 1
+                fig = go.Figure(
+                    data=go.Heatmap(z=plot_df.values, x=plot_df.columns, y=plot_df.index, colorscale='RdYlGn_r',
+                                    zmin=-max_abs, zmax=max_abs))
+                fig.update_layout(title="二维参数收益分布 (红区代表参数平原)", xaxis_title=valid_dims[0],
+                                  yaxis_title=valid_dims[1])
+                st.plotly_chart(fig, use_container_width=True)
+            elif len(valid_dims) >= 3:
+                # N维：平行坐标图 (高级数据科学家专用)
+                st.info(
+                    "💡 **图表指南**：您选择了 >=3 个维度。下图为**平行坐标图**。每一条线代表一种参数组合，最右侧红色的线为高收益组合。")
+                fig = px.parallel_coordinates(
+                    results_df,
+                    dimensions=valid_dims + ['收益率 (%)', '夏普比率'],
+                    color='收益率 (%)',
+                    color_continuous_scale=px.colors.diverging.RdYlGn[::-1]
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
             if enable_oos:
                 st.subheader("📋 前 10 名参数 OOS 盲测排行榜")
                 top_10 = results_df.sort_values('夏普比率', ascending=False).head(10).copy()
                 oos_results = []
-                for idx, row in top_10.iterrows():
-                    param_dict = {opt_keys[0]: row[la], opt_keys[1]: row[lb]}
-                    # 补充静态参数用于单点测试
-                    for bk in bool_params:
-                        param_dict[bk] = row.get(bk, bool_params[bk].default)
-
+                for _, row in top_10.iterrows():
+                    # 反向解析回原始参数 Key
+                    param_dict = {k: row[desc_map[k]] for k in opt_keys}
                     bt_test = run_single_param_backtest(raw_data, strategy_type, param_dict, global_filters,
                                                         initial_capital, pos_ratio)
 
                     test_part = bt_test.iloc[split_idx:]
-                    if test_part.empty or len(test_part) < 2:
-                        test_ret, test_sharpe = 0, 0
-                    else:
-                        test_ret = ((test_part['strategy_equity'].iloc[-1] / test_part['strategy_equity'].iloc[
-                            0]) - 1) * 100
-                        test_sharpe = test_part.attrs.get('sharpe_ratio', 0)
+                    test_ret = ((test_part['strategy_equity'].iloc[-1] / test_part['strategy_equity'].iloc[
+                        0]) - 1) * 100 if len(test_part) > 1 else 0
+                    test_sharpe = test_part.attrs.get('sharpe_ratio', 0) if len(test_part) > 1 else 0
 
-                    oos_results.append({
-                        la: row[la], lb: row[lb],
-                        "训练收益 (%)": row['收益率 (%)'], "盲测收益 (%)": round(test_ret, 2),
-                        "盲测夏普": round(test_sharpe, 2),
-                        "状态": "✅ 通过" if test_ret > 0 else "❌ 崩盘"
-                    })
+                    res_dict = {desc_map[k]: row[desc_map[k]] for k in valid_dims}
+                    res_dict.update({"训练收益(%)": row['收益率 (%)'], "盲测收益(%)": round(test_ret, 2),
+                                     "盲测夏普": round(test_sharpe, 2), "状态": "✅ 通过" if test_ret > 0 else "❌ 崩盘"})
+                    oos_results.append(res_dict)
 
                 st.dataframe(pd.DataFrame(oos_results).style.map(
                     lambda x: 'color: red' if x == '✅ 通过' else 'color: green' if x == '❌ 崩盘' else '',

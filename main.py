@@ -56,15 +56,14 @@ def main():
             st.rerun()
 
         st.divider()
-        strategy_tips = """
-        **💡 五大流派优缺点指南：**\n
-        📈 **双均线动能**：捕捉大牛股主升浪；震荡市反复打脸。\n
-        🌋 **布林带突破**：专抓妖股起爆点；假突破较多。\n
-        🧲 **RSI极值反转**：震荡市印钞机；单边暴跌易腰斩。\n
-        🌊 **MACD趋势**：波段稳健抗骗线；信号滞后。\n
-        ⚡ **KDJ震荡**：短线极其敏锐；遇主升浪易踏空。
-        """
+        # 🚀 1. 动态生成所有策略的 Tips 指南
         available_strategies = StrategyRegistry.list_strategies()
+        strategy_tips = "**💡 策略流派库指南：**\n\n"
+        for name in available_strategies:
+            strat = StrategyRegistry.get(name)
+            strategy_tips += f"- **{name}**: {strat.description}\n"
+
+        # 🚀 2. 渲染联动下拉框
         strategy_type = st.selectbox(
             "🧠 核心策略模型",
             available_strategies,
@@ -72,14 +71,32 @@ def main():
             help=strategy_tips
         )
 
+        # 🚀 3. 实时高亮显示当前选中策略的说明
+        current_strat = StrategyRegistry.get(strategy_type)
+        if current_strat:
+            st.info(f"🎯 **当前策略**：{current_strat.description}")
+
         initial_capital = st.number_input("初始资金 (元)", 10000, 1000000, 100000, step=10000, key="global_capital")
         today = datetime.now()
         start_date = st.date_input("开始日期", today - timedelta(days=365), key="date_start")
         end_date = st.date_input("结束日期", today, key="date_end")
         st.divider()
-        st.header("🛡️ 全局交易纪律")
-        global_tp = st.number_input("全局硬性止盈 (%)", 1, 100, 15, key="g_tp") / 100.0
-        global_sl = st.number_input("全局硬性止损 (%)", -50, -1, -8, key="g_sl") / 100.0
+        st.header("🛡️ 资金管理与防守纪律")
+
+        # 传统硬性止盈止损
+        global_tp = st.number_input("硬性止盈 (建议调高，让利润奔跑 %)", 1, 300, 30, key="g_tp",
+                                    help="如果开启追踪止损，建议将硬性止盈调高到 50% 以上") / 100.0
+        global_sl = st.number_input("绝对止损 (跌破无条件出局 %)", -50, -1, -8, key="g_sl") / 100.0
+
+        # 🚀 引入跟踪止损核武器 UI
+        st.write("")
+        use_trailing = st.toggle("📈 开启动态跟踪止损 (Trailing Stop)", value=False, key="tg_trail")
+        if use_trailing:
+            with st.container(border=True):
+                trail_act = st.slider("🎯 激活门槛 (盈利超过该比例启动)", 1, 50, 10) / 100.0
+                trail_rate = st.slider("🔪 撤退红线 (从峰值回撤即平仓)", 1, 30, 5) / 100.0
+        else:
+            trail_act, trail_rate = 0.10, 0.05
 
         st.divider()
         st.header("🛡️ 过滤引擎 (实战宽松版)")
@@ -103,7 +120,8 @@ def main():
             'use_index': use_index, 'vol_ratio': vol_ratio,
             'rsi_limit': rsi_limit, 'slope_min': slope_min,
             'tp': global_tp, 'sl': global_sl,
-            'buy_fee': buy_fee, 'sell_fee': sell_fee,'min_comm': min_comm,
+            'use_trailing': use_trailing, 'trail_act': trail_act, 'trail_rate': trail_rate,
+            'buy_fee': buy_fee, 'sell_fee': sell_fee, 'min_comm': min_comm,
             'slippage': slippage, 'min_shares': int(min_shares)
         }
 

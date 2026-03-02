@@ -9,17 +9,16 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 
-
 @dataclass
 class StrategyParam:
-    """策略参数定义"""
+    """策略参数元数据定义"""
     name: str
     default: Any
     min_val: Any = None
     max_val: Any = None
-    step: Any = 1
+    step: Any = None
     description: str = ""
-
+    impact: str = ""  # 🚀 新增：参数调校的影响说明
 
 @dataclass
 class StrategyResult:
@@ -76,7 +75,8 @@ class Strategy(ABC):
         min_val: Any = None,
         max_val: Any = None,
         step: Any = 1,
-        description: str = ""
+        description: str = "",
+        impact: str = ""  # 🚀 新增：参数调校的影响说明
     ):
         """注册策略参数"""
         self._params[name] = StrategyParam(
@@ -85,7 +85,8 @@ class Strategy(ABC):
             min_val=min_val,
             max_val=max_val,
             step=step,
-            description=description
+            description=description,
+            impact=impact
         )
 
     @abstractmethod

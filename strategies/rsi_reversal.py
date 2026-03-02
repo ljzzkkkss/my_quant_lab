@@ -74,7 +74,6 @@ class RSIStrategy(Strategy):
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
         self.rsi_period = rsi_period
-
         # 注册参数
         self.register_param(
             name='lower_bound',
@@ -82,7 +81,8 @@ class RSIStrategy(Strategy):
             min_val=10,
             max_val=50,
             step=2,
-            description='超卖阈值（低于此值买入）'
+            description='超卖阈值（低于此值买入）',
+            impact='触发抄底的红线。调大(如40)：更容易成交，但也容易抄在半山腰；调小(如20)：买点极其安全，但会踏空绝大多数波段。'
         )
         self.register_param(
             name='upper_bound',
@@ -90,7 +90,8 @@ class RSIStrategy(Strategy):
             min_val=50,
             max_val=95,
             step=2,
-            description='超买阈值（高于此值卖出）'
+            description='超买阈值（高于此值卖出）',
+            impact='触发逃顶的红线。调小(如60)：容易过早卖飞主升浪；调大(如80)：能吃到更多鱼身，但容易在顶点随波逐流产生利润回撤。'
         )
         self.register_param(
             name='rsi_period',
@@ -98,7 +99,8 @@ class RSIStrategy(Strategy):
             min_val=5,
             max_val=30,
             step=1,
-            description='RSI 计算周期'
+            description='RSI 计算周期',
+            impact='调小：指标剧烈波动，来回打脸；调大：平滑震荡，但会产生严重的滞后。'
         )
 
     @property

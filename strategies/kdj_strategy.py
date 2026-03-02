@@ -85,7 +85,8 @@ class KDJStrategy(Strategy):
             min_val=-20,
             max_val=30,
             step=5,
-            description='J 线超卖买入线'
+            description='J 线超卖买入线',
+            impact='调高：频繁进场抢反弹；调低：要求出现极度恐慌才进场，适合做极致左侧。'
         )
         self.register_param(
             name='j_sell',
@@ -93,7 +94,8 @@ class KDJStrategy(Strategy):
             min_val=70,
             max_val=120,
             step=5,
-            description='J 线超买卖出线'
+            description='J 线超买卖出线',
+            impact='调低：见好就收，适合弱势行情；调高：吃到极限，适合多头行情。'
         )
         self.register_param(
             name='n',
@@ -101,7 +103,8 @@ class KDJStrategy(Strategy):
             min_val=5,
             max_val=30,
             step=1,
-            description='KDJ 计算周期'
+            description='KDJ 计算周期',
+            impact='短线极其敏锐，失真度高。调大会削弱KDJ的短线特色，趋向于普通的 RSI。'
         )
 
     @property
