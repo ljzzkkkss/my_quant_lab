@@ -6,6 +6,8 @@
 import pandas as pd
 import numpy as np
 from typing import Tuple, Optional
+from configs.settings import get_market_config
+market_conf = get_market_config()
 
 
 def detect_suspended_days(df: pd.DataFrame, volume_threshold: float = 0) -> pd.Series:
@@ -48,13 +50,13 @@ def detect_price_limit(
 
     # 确定涨跌停幅度
     if code.startswith(('3', '68')):  # 创业板/科创板 20%
-        limit_rate = 0.20
+        limit_rate = market_conf.LIMIT_KC_CYB
     elif code.startswith(('8', '4')):  # 北交所 30%
-        limit_rate = 0.30
+        limit_rate = market_conf.LIMIT_BJ
     elif code.startswith(('1')):  # ETF 通常 10% 或无限制
-        limit_rate = 0.10
+        limit_rate = market_conf.LIMIT_MAIN
     else:  # 主板 10%
-        limit_rate = 0.10
+        limit_rate = market_conf.LIMIT_MAIN
 
     # 计算涨跌幅
     pct_change = df['收盘'].pct_change()

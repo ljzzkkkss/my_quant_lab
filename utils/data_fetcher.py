@@ -155,7 +155,8 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
 
     # 2. 拦截盘中时间：如果是今天，且当前时间早于 15:30 (收盘数据未清算完)，强制退回昨天
     if req_end_dt == today_dt:
-        if now.hour < 15 or (now.hour == 15 and now.minute < 30):
+        if now.hour < data_conf.DATA_REFRESH_HOUR or \
+                (now.hour == data_conf.DATA_REFRESH_HOUR and now.minute < data_conf.DATA_REFRESH_MINUTE):
             req_end_dt = today_dt - timedelta(days=1)
 
     # 修正后如果 start 大于 end (例如在长假期间被拦截)，直接返回空

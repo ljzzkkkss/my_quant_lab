@@ -12,13 +12,15 @@ import pandas as pd
 import numpy as np
 from typing import Optional
 from .base import Strategy, auto_register
+from configs.settings import get_filter_config
+filter_conf = get_filter_config()
 
 
 def apply_macd_strategy(
     df: pd.DataFrame,
-    fast_period: int = 12,
-    slow_period: int = 26,
-    signal_period: int = 9
+    fast_period: int = filter_conf.MACD_FAST,
+    slow_period: int = filter_conf.MACD_SLOW,
+    signal_period: int = filter_conf.MACD_SIGNAL
 ) -> pd.DataFrame:
     """
     MACD 趋势波段策略
@@ -67,9 +69,9 @@ class MACDStrategy(Strategy):
 
     def __init__(
         self,
-        fast_period: int = 12,
-        slow_period: int = 26,
-        signal_period: int = 9
+        fast_period: int = filter_conf.MACD_FAST,
+        slow_period: int = filter_conf.MACD_SLOW,
+        signal_period: int = filter_conf.MACD_SIGNAL
     ):
         super().__init__()
         self.fast_period = fast_period

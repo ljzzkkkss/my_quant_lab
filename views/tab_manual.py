@@ -1,102 +1,105 @@
 import streamlit as st
 import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
-from strategies.double_ma import apply_double_ma_strategy
-from strategies.bollinger_bands import apply_bollinger_strategy
-from strategies.rsi_reversal import apply_rsi_strategy
-from strategies.macd_strategy import apply_macd_strategy
-from strategies.kdj_strategy import apply_kdj_strategy
 from backtest.engine import run_backtest, plot_equity_curve
 from backtest.optimizer import apply_advanced_filters
 from components.charts import plot_interactive_kline
 from configs.settings import get_backtest_config
+from strategies.base import StrategyRegistry
+
 bt_conf = get_backtest_config()
+
 
 def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filters, strategy_type):
     st.markdown(f"### 🎛️ {strategy_type} - 手动深度回测")
+
+    strategy = StrategyRegistry.get(strategy_type)
+    if not strategy:
+        st.error(f"❌ 找不到策略实例：{strategy_type}")
+        return
+
     with st.container(border=True):
         st.subheader("⚙️ 信号参数")
-        col1, col2, col3 = st.columns(3)
+        param_values = {}
 
-        if strategy_type == "双均线动能策略":
-            with col1:
-                p1 = st.number_input("短期均线", 2, 60, 5, key="m_ma_s")
-            with col2:
-                p2 = st.number_input("长期均线", 5, 250, 20, key="m_ma_l")
-        elif strategy_type == "布林带突破策略":
-            with col1:
-                p1 = st.number_input("计算周期", 5, 120, 20, key="m_boll_w")
-            with col2:
-                p2 = st.number_input("标准差倍数", 1.0, 3.5, 2.0, 0.1, key="m_boll_s")
-        elif strategy_type == "RSI极值反转策略":
-            with col1:
-                p1 = st.number_input("抄底阈值", 10, 50, 30, key="m_rsi_b")
-            with col2:
-                p2 = st.number_input("逃顶阈值", 50, 95, 70, key="m_rsi_s")
-        elif strategy_type == "MACD趋势策略":
-            with col1:
-                p1 = st.number_input("快线周期", 5, 40, 12, key="m_macd_f")
-            with col2:
-                p2 = st.number_input("慢线周期", 10, 100, 26, key="m_macd_s")
-        elif strategy_type == "KDJ震荡策略":
-            with col1:
-                p1 = st.number_input("超卖抄底线", -20, 30, 0, key="m_kdj_b")
-            with col2:
-                p2 = st.number_input("超买逃顶线", 70, 120, 100, key="m_kdj_s")
-        with col3:
-            pos_ratio = st.slider("买入仓位", 0.1, 1.0, 1.0, key="m_pos")
+        # 🚀 1. 参数类型分离：数值型用于输入框，布尔型用于开关
+        num_params = {k: v for k, v in strategy.params.items() if not isinstance(v.default, bool)}
+        bool_params = {k: v for k, v in strategy.params.items() if isinstance(v.default, bool)}
+
+        # 🚀 2. 渲染数值型参数（紧凑列排版）
+        if num_params:
+            num_cols = st.columns(len(num_params))
+            for i, (p_name, p_def) in enumerate(num_params.items()):
+                with num_cols[i]:
+                    step = p_def.step if p_def.step else 1
+                    min_val = type(p_def.default)(p_def.min_val) if p_def.min_val is not None else None
+                    max_val = type(p_def.default)(p_def.max_val) if p_def.max_val is not None else None
+                    param_values[p_name] = st.number_input(
+                        p_def.description or p_name,
+                        min_value=min_val, max_value=max_val, value=p_def.default, step=step,
+                        key=f"m_{strategy_type}_{p_name}"
+                    )
+
+        # 🚀 3. 渲染布尔型参数（单独一行，美观的 Toggle 开关）
+        if bool_params:
+            st.write("")  # 留点呼吸空间
+            bool_cols = st.columns(len(bool_params))
+            for i, (p_name, p_def) in enumerate(bool_params.items()):
+                with bool_cols[i]:
+                    param_values[p_name] = st.toggle(
+                        f"🛠️ {p_def.description or p_name}",
+                        value=p_def.default,
+                        key=f"m_{strategy_type}_{p_name}"
+                    )
+
+        st.divider()
+
+        # 🚀 4. 执行操作区（底部对齐）
+        c_pos, c_btn = st.columns([2, 1])
+        with c_pos:
+            pos_ratio = st.slider("买入仓位比例", 0.1, 1.0, 1.0, key="m_pos")
+        with c_btn:
+            st.write("")  # 下沉对齐滑块
             run_btn = st.button("🚀 执行完整回测", use_container_width=True, type="primary", key="m_run")
 
     if run_btn:
         with st.spinner('回测计算中...'):
             raw_data = get_daily_hfq_data(symbol, start_date, end_date)
             if raw_data is not None and not raw_data.empty:
-                if strategy_type == "双均线动能策略":
-                    strat_df = apply_double_ma_strategy(raw_data, p1, p2, global_filters['use_macd'])
-                elif strategy_type == "布林带突破策略":
-                    strat_df = apply_bollinger_strategy(raw_data, p1, p2)
-                elif strategy_type == "RSI极值反转策略":
-                    strat_df = apply_rsi_strategy(raw_data, p1, p2)
-                elif strategy_type == "MACD趋势策略":
-                    strat_df = apply_macd_strategy(raw_data, p1, p2)
-                elif strategy_type == "KDJ震荡策略":
-                    strat_df = apply_kdj_strategy(raw_data, p1, p2)
+                # 调用底层接口，直接传入组装好的参数字典
+                strat_df = strategy.generate_signals(raw_data, **param_values)
 
-                index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters['use_index'] else None
+                # ========= 以下逻辑保持完全不变 =========
+                index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters[
+                    'use_index'] else None
                 strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
 
                 strat_df['final_signal'] = np.where(strat_df['filter_pass'], strat_df['signal'], 0)
                 strat_df['position_diff'] = strat_df['final_signal'].diff().fillna(0)
 
-                bt_results = run_backtest(strat_df, initial_capital, pos_ratio, take_profit=global_filters['tp'],
-                                          stop_loss=global_filters['sl'])
+                bt_results = run_backtest(strat_df, initial_capital, pos_ratio, global_filters)
 
                 st.divider()
                 st.subheader("🎯 明日实战执行建议")
-
                 last_day = bt_results.iloc[-1]
-                prev_day = bt_results.iloc[-2] if len(bt_results) > 1 else last_day
                 last_date_str = last_day.name.strftime('%Y-%m-%d')
 
                 c_advice, c_status = st.columns([2, 1])
-
                 with c_advice:
                     if last_day['position_diff'] == 1:
                         st.success(
-                            f"### 🏹 指令：【开盘买入】\n**依据**：{last_date_str} 策略发出金叉/突破信号。建议明天集合竞价或开盘阶段按计划仓位买入。")
+                            f"### 🏹 指令：【开盘买入】\n**依据**：{last_date_str} 策略发出开仓信号。建议明天集合竞价或开盘阶段按计划仓位买入。")
                     elif last_day['position_diff'] == -1:
-                        reason = last_day.get('sell_reason', '策略死叉/超买信号')
                         st.error(
-                            f"### 🏳️ 指令：【开盘平仓】\n**依据**：{last_date_str} 触发 {reason}。明天开盘请务必清仓，落袋为安或止损避险。")
+                            f"### 🏳️ 指令：【开盘平仓】\n**依据**：{last_date_str} 触发 {last_day.get('sell_reason', '平仓')}。请务必清仓。")
                     elif last_day['final_signal'] == 1:
                         unrealized_pct = (last_day['收盘'] - last_day.get('buy_price',
                                                                           last_day['收盘'])) / last_day.get('buy_price',
                                                                                                             1)
                         st.info(
-                            f"### 💎 指令：【继续持股】\n**依据**：当前策略信号稳定，未触及止盈止损。建议继续持仓，当前参考浮动盈亏：{unrealized_pct * 100:.2f}%。")
+                            f"### 💎 指令：【继续持股】\n**依据**：策略信号稳定。当前参考浮动盈亏：{unrealized_pct * 100:.2f}%。")
                     else:
-                        st.write(
-                            f"### ☕ 指令：【空仓观望】\n**依据**：{last_date_str} 暂无有效买入信号或处于大盘择时屏蔽期。保持现金，等待下一次狩猎机会。")
+                        st.write(f"### ☕ 指令：【空仓观望】\n**依据**：{last_date_str} 暂无买入信号。等待机会。")
 
                 with c_status:
                     st.metric("最新收盘价", f"¥{last_day['收盘']:.2f}")
@@ -118,11 +121,9 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                 with st.expander("📄 查看详细交易明细"):
                     detail_df = bt_results[bt_results['position_diff'] != 0].copy()
                     if not detail_df.empty:
-                        # 🚀 核心修复：更正 A 股买卖颜色动作标识
                         detail_df['动作'] = detail_df['position_diff'].apply(
                             lambda x: "🔴 建立仓位" if x > 0 else "🟢 清仓出局")
                         if 'sell_reason' not in detail_df.columns: detail_df['sell_reason'] = ""
                         detail_df = detail_df.rename(
                             columns={'收盘': '成交价', 'sell_reason': '离场原因', 'strategy_equity': '策略净值'})
-                        st.dataframe(detail_df[['动作', '成交价', '离场原因', '策略净值']],
-                                     use_container_width=True)
+                        st.dataframe(detail_df[['动作', '成交价', '离场原因', '策略净值']], use_container_width=True)

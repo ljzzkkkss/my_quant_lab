@@ -5,31 +5,16 @@ import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import optimize_strategy, apply_advanced_filters
 from backtest.engine import run_backtest, plot_equity_curve
-
-# 导入所有策略计算底层
-from strategies.double_ma import apply_double_ma_strategy
-from strategies.bollinger_bands import apply_bollinger_strategy
-from strategies.rsi_reversal import apply_rsi_strategy
-from strategies.macd_strategy import apply_macd_strategy
-from strategies.kdj_strategy import apply_kdj_strategy
+from strategies.base import StrategyRegistry
 from configs.settings import get_backtest_config
+
 bt_conf = get_backtest_config()
 
 
-def run_single_param_backtest(raw_data, strategy_type, p1, p2, global_filters, initial_capital, pos_ratio):
-    # 1. 信号生成
-    if strategy_type == "双均线动能策略":
-        strat_df = apply_double_ma_strategy(raw_data, int(p1), int(p2), global_filters.get('use_macd'))
-    elif strategy_type == "布林带突破策略":
-        strat_df = apply_bollinger_strategy(raw_data, int(p1), float(p2))
-    elif strategy_type == "RSI极值反转策略":
-        strat_df = apply_rsi_strategy(raw_data, int(p1), int(p2))
-    elif strategy_type == "MACD趋势策略":
-        strat_df = apply_macd_strategy(raw_data, int(p1), int(p2))
-    elif strategy_type == "KDJ震荡策略":
-        strat_df = apply_kdj_strategy(raw_data, int(p1), int(p2))
+def run_single_param_backtest(raw_data, strategy_type, param_dict, global_filters, initial_capital, pos_ratio):
+    strategy = StrategyRegistry.get(strategy_type)
+    strat_df = strategy.generate_signals(raw_data, **param_dict)
 
-    # 2. 过滤 (修复破坏持仓的致命Bug)
     index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, raw_data.index[0].strftime('%Y%m%d'),
                                     raw_data.index[-1].strftime('%Y%m%d')) if global_filters['use_index'] else None
     strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
@@ -45,78 +30,63 @@ def run_single_param_backtest(raw_data, strategy_type, p1, p2, global_filters, i
     strat_df['final_signal'] = strat_df['action'].ffill().fillna(0)
     strat_df['position_diff'] = strat_df['final_signal'].diff().fillna(0)
 
-    # 3. 回测
-    return run_backtest(strat_df, initial_capital, pos_ratio, take_profit=global_filters['tp'],
-                        stop_loss=global_filters['sl'])
+    return run_backtest(strat_df, initial_capital, pos_ratio, global_filters)
+
+
 def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filters, strategy_type):
-    stype = strategy_type.replace(" ", "")
     st.markdown(f"### 🤖 {strategy_type} - 参数寻优与稳定性检验")
 
-    # 💡 寻优提示说明
-    if strategy_type == "双均线动能策略":
-        st.info("💡 **寻优目标**：寻找主力均线逻辑。短线极其敏感，步长建议设为 1；长线跨度大，步长设为 5。")
+    strategy = StrategyRegistry.get(strategy_type)
+    if not strategy:
+        st.error("策略未注册！")
+        return
+
+    st.info(f"💡 **寻优目标**：{strategy.description}")
 
     with st.expander("🎯 自定义寻优搜索空间与步长", expanded=True):
-        col_p1, col_p2 = st.columns(2)
-        p1_param = p2_param = None  # 初始化变量
-        la = lb = ""  # 初始化参数名称
+        # 🚀 分离数值型(网格寻优轴)与布尔型(静态设置项)
+        opt_params = {k: v for k, v in strategy.params.items() if not isinstance(v.default, bool)}
+        bool_params = {k: v for k, v in strategy.params.items() if isinstance(v.default, bool)}
 
-        if stype == "双均线动能策略":
-            with col_p1:
-                s_range = st.slider("短期均线范围", 2, 60, (5, 15), key="a_ma_sr")
-                s_step = st.number_input("短期步长", 1, 10, 1, key="a_ma_ss")
-            with col_p2:
-                l_range = st.slider("长期均线范围", 10, 250, (20, 60), key="a_ma_lr")
-                l_step = st.number_input("长期步长", 1, 20, 5, key="a_ma_ls")
-            p1_param, p2_param = (s_range[0], s_range[1], s_step), (l_range[0], l_range[1], l_step)
-            la, lb = "短期均线", "长期均线"
-        elif stype == "布林带突破策略":
-            with col_p1:
-                w_range = st.slider("周期范围", 5, 120, (10, 30), key="a_boll_wr"); w_step = st.number_input(
-                    "周期步长", 1, 20, 5, key="a_boll_ws")
-            with col_p2:
-                std_range = st.slider("标准差范围", 1.0, 3.5, (1.5, 2.5), key="a_boll_sr"); std_step = st.number_input(
-                    "标准差步长", 0.1, 1.0, 0.1, key="a_boll_ss")
-            p1_param, p2_param = (w_range[0], w_range[1], w_step), (std_range[0], std_range[1], std_step)
-            la, lb = "计算周期", "标准差倍数"
-        elif stype == "RSI极值反转策略":
-            with col_p1:
-                lower_range = st.slider("抄底线范围", 10, 50, (20, 40), key="a_rsi_lr"); lower_step = st.number_input(
-                    "抄底步长", 1, 10, 2, key="a_rsi_ls")
-            with col_p2:
-                upper_range = st.slider("逃顶线范围", 50, 95, (60, 85), key="a_rsi_ur"); upper_step = st.number_input(
-                    "逃顶步长", 1, 10, 2, key="a_rsi_us")
-            p1_param, p2_param = (lower_range[0], lower_range[1], lower_step), (upper_range[0], upper_range[1], upper_step)
-            la, lb = "抄底阈值", "逃顶阈值"
-        elif stype == "MACD趋势策略":
-            with col_p1:
-                fast_range = st.slider("快线范围", 5, 40, (10, 20), key="a_macd_fr"); fast_step = st.number_input(
-                    "快线步长", 1, 10, 2, key="a_macd_fs")
-            with col_p2:
-                slow_range = st.slider("慢线范围", 15, 100, (20, 40), key="a_macd_sr"); slow_step = st.number_input(
-                    "慢线步长", 1, 20, 2, key="a_macd_ss")
-            p1_param, p2_param = (fast_range[0], fast_range[1], fast_step), (slow_range[0], slow_range[1], slow_step)
-            la, lb = "快线周期", "慢线周期"
-        elif stype == "KDJ震荡策略":
-            with col_p1:
-                buy_range = st.slider("抄底线范围", -20, 30, (-10, 10), key="a_kdj_br"); buy_step = st.number_input(
-                    "抄底步长", 1, 10, 5, key="a_kdj_bs")
-            with col_p2:
-                sell_range = st.slider("逃顶线范围", 70, 120, (90, 110), key="a_kdj_sr"); sell_step = st.number_input(
-                    "逃顶步长", 1, 10, 5, key="a_kdj_ss")
-            p1_param, p2_param = (buy_range[0], buy_range[1], buy_step), (sell_range[0], sell_range[1], sell_step)
-            la, lb = "超卖买入线", "超买卖出线"
-        else:
-            st.error(f"❌ 未知的策略类型：{strategy_type}")
+        opt_keys = list(opt_params.keys())[:2]
+        if len(opt_keys) < 2:
+            st.warning("该策略可调数值参数不足2个，无法进行二维网格寻优。")
             return
 
-        # 计算总数
-        if strategy_type == "布林带突破策略":
-            total_comb = len(range(p1_param[0], p1_param[1] + 1, p1_param[2])) * len(
-                np.arange(p2_param[0], p2_param[1] + 0.01, p2_param[2]))
-        else:
-            total_comb = len(range(p1_param[0], p1_param[1] + 1, p1_param[2])) * len(
-                range(p2_param[0], p2_param[1] + 1, p2_param[2]))
+        col_p1, col_p2 = st.columns(2)
+        grid_values = []
+
+        for i, key in enumerate(opt_keys):
+            p_def = opt_params[key]
+            with (col_p1 if i == 0 else col_p2):
+                desc = p_def.description or key
+                def_min = p_def.min_val if p_def.min_val is not None else int(p_def.default * 0.5)
+                def_max = p_def.max_val if p_def.max_val is not None else int(p_def.default * 2.0)
+
+                if isinstance(p_def.default, float):
+                    p_range = st.slider(f"{desc} 范围", float(def_min), float(def_max),
+                                        (float(p_def.default * 0.8), float(p_def.default * 1.2)), key=f"a_r_{key}")
+                    p_step = st.number_input(f"{desc} 步长", 0.01, 1.0, float(p_def.step), key=f"a_s_{key}")
+                    grid_values.append(list(np.arange(p_range[0], p_range[1] + p_step * 0.1, p_step)))
+                else:
+                    p_range = st.slider(f"{desc} 范围", int(def_min), int(def_max),
+                                        (int(p_def.default * 0.8), int(p_def.default * 1.2)), key=f"a_r_{key}")
+                    p_step = st.number_input(f"{desc} 步长", 1, max(10, int((def_max - def_min) / 5)), int(p_def.step),
+                                             key=f"a_s_{key}")
+                    grid_values.append(list(range(p_range[0], p_range[1] + 1, p_step)))
+
+        # 🚀 渲染静态策略开关，并通过“单元素列表”巧妙注入到网格空间中！
+        if bool_params:
+            st.divider()
+            st.write("🛠️ **静态策略开关** (应用到所有寻优组合)")
+            bool_cols = st.columns(len(bool_params))
+            for i, (p_name, p_def) in enumerate(bool_params.items()):
+                with bool_cols[i]:
+                    val = st.toggle(p_def.description or p_name, value=p_def.default, key=f"a_{strategy_type}_{p_name}")
+                    opt_keys.append(p_name)
+                    grid_values.append([val])  # 注入到笛卡尔积中，不增加计算量
+
+        total_comb = len(grid_values[0]) * len(grid_values[1])
 
     st.divider()
     st.subheader("🔬 稳定性体检：样本外盲测 (OOS)")
@@ -129,7 +99,7 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
         pos_ratio = st.number_input("寻优单次仓位", 0.1, 1.0, 1.0, 0.1, key="a_pos")
     with c2:
         st.markdown(
-            f"<div style='margin-top: 32px;'>📊 预计计算：<strong style='color:red;'>{int(total_comb)}</strong> 个组合</div>",
+            f"<div style='margin-top: 32px;'>📊 预计扫描：<strong style='color:red;'>{total_comb}</strong> 个网格点</div>",
             unsafe_allow_html=True)
     with c3:
         st.write("");
@@ -138,10 +108,9 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
     if run_opt:
         raw_data = get_daily_hfq_data(symbol, start_date, end_date)
         if raw_data is None or raw_data.empty:
-            st.error("❌ 无法获取数据，请检查股票代码或网络")
+            st.error("❌ 无法获取数据")
             return
 
-        # 划分数据集
         if enable_oos:
             split_idx = int(len(raw_data) * train_ratio)
             train_raw = raw_data.iloc[:split_idx]
@@ -151,76 +120,59 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
         else:
             train_raw = raw_data
             split_idx = 0
+
         with st.spinner('建立多进程计算池...'):
-            # 💡 增加前端进度条实例与回调函数
             progress_bar = st.progress(0, text="🚀 正在多进程扫描参数空间...")
 
             def update_progress(p):
                 progress_bar.progress(p, text=f"扫描进度: {int(p * 100)}%")
 
-            results_df, param1_name, param2_name = optimize_strategy(
+            results_df, la, lb = optimize_strategy(
                 train_raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                p1_param, p2_param, start_date, end_date,
-                progress_callback=update_progress  # 👈 注入回调
+                opt_keys, grid_values, start_date, end_date, progress_callback=update_progress
             )
+            progress_bar.empty()
 
-            progress_bar.empty()  # 计算完成后清空进度条
-            # 🚨 核心逻辑：寻优时使用全局定义的止盈止损
-            results_df, param1_name, param2_name = optimize_strategy(
-                train_raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                p1_param, p2_param, start_date, end_date
-            )
-
-            # 🛡️ 检查结果有效性
-            if results_df is None or results_df.empty:
-                st.error("❌ 参数寻优失败，所有参数组合都无法产生有效结果")
-                st.info("💡 可能原因：\n- 数据质量有问题（如停牌、数据不足）\n- 策略参数组合导致计算错误\n- 高级过滤器过滤了所有信号")
+            if results_df is None or results_df.empty or '收益率 (%)' not in results_df.columns:
+                st.error("❌ 参数寻优失败，未产生有效交易")
                 return
 
-            if '收益率 (%)' not in results_df.columns:
-                st.error(f"❌ 结果数据格式异常，缺少列：收益率 (%)")
-                st.info(f"当前列：{list(results_df.columns)}")
-                return
-
-            # 绘制热力图
             max_abs = results_df['收益率 (%)'].abs().max() or 1
             plot_df = results_df.pivot(index=lb, columns=la, values='收益率 (%)')
-            fig = go.Figure(
-                data=go.Heatmap(z=plot_df.values, x=plot_df.columns, y=plot_df.index, colorscale='RdYlGn_r',
-                                zmin=-max_abs, zmax=max_abs))
-            fig.update_layout(title="训练集参数收益分布 (红区代表参数平原，越宽越稳)", xaxis_title=la,
-                              yaxis_title=lb)
+            fig = go.Figure(data=go.Heatmap(z=plot_df.values, x=plot_df.columns, y=plot_df.index, colorscale='RdYlGn_r',
+                                            zmin=-max_abs, zmax=max_abs))
+            fig.update_layout(title="训练集参数收益分布 (红区代表参数平原，越宽越稳)", xaxis_title=la, yaxis_title=lb)
             st.plotly_chart(fig, use_container_width=True)
 
             if enable_oos:
                 st.subheader("📋 前 10 名参数 OOS 盲测排行榜")
                 top_10 = results_df.sort_values('夏普比率', ascending=False).head(10).copy()
-
                 oos_results = []
                 for idx, row in top_10.iterrows():
-                    # 对前 10 名每一组参数进行盲测
-                    bt_test = run_single_param_backtest(raw_data, strategy_type, row[la], row[lb], global_filters,
+                    param_dict = {opt_keys[0]: row[la], opt_keys[1]: row[lb]}
+                    # 补充静态参数用于单点测试
+                    for bk in bool_params:
+                        param_dict[bk] = row.get(bk, bool_params[bk].default)
+
+                    bt_test = run_single_param_backtest(raw_data, strategy_type, param_dict, global_filters,
                                                         initial_capital, pos_ratio)
 
-                    # 仅切出测试集部分的收益
                     test_part = bt_test.iloc[split_idx:]
                     if test_part.empty or len(test_part) < 2:
-                        test_ret = 0
-                        test_sharpe = 0
+                        test_ret, test_sharpe = 0, 0
                     else:
-                        test_ret = ((test_part['strategy_equity'].iloc[-1] / test_part['strategy_equity'].iloc[0]) - 1) * 100
+                        test_ret = ((test_part['strategy_equity'].iloc[-1] / test_part['strategy_equity'].iloc[
+                            0]) - 1) * 100
                         test_sharpe = test_part.attrs.get('sharpe_ratio', 0)
 
                     oos_results.append({
                         la: row[la], lb: row[lb],
-                        "训练收益 (%)": row['收益率 (%)'],
-                        "盲测收益 (%)": round(test_ret, 2),
+                        "训练收益 (%)": row['收益率 (%)'], "盲测收益 (%)": round(test_ret, 2),
                         "盲测夏普": round(test_sharpe, 2),
                         "状态": "✅ 通过" if test_ret > 0 else "❌ 崩盘"
                     })
 
-                oos_df = pd.DataFrame(oos_results)
-                st.dataframe(oos_df.style.map(
+                st.dataframe(pd.DataFrame(oos_results).style.map(
                     lambda x: 'color: red' if x == '✅ 通过' else 'color: green' if x == '❌ 崩盘' else '',
                     subset=['状态']), use_container_width=True)
             else:

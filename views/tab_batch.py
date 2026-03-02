@@ -3,82 +3,74 @@ import pandas as pd
 import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import optimize_strategy
+from strategies.base import StrategyRegistry
 
 
 def render_batch_tab(display_list, start_date, end_date, initial_capital, global_filters, strategy_type):
     st.markdown(f"### 📡 {strategy_type} - 暴力寻优雷达")
 
-    # 顶部核心说明
+    strategy = StrategyRegistry.get(strategy_type)
+    if not strategy:
+        st.error("策略未注册！")
+        return
+
     st.info(
-        "💡 **批量诊断提示**：本功能将对下方选定的多只股票执行**并行扫描**。不仅找出它们各自的最优参数，还会基于该参数的夏普比率、盈亏比等指标，给出机构级的**资金分配诊断建议**。")
+        "💡 **批量诊断提示**：本功能将对下方选定的多只股票执行**并行扫描**。基于最优参数下的夏普比率、盈亏比给出机构级的**资金分配诊断建议**。")
 
-    selected_stocks = st.multiselect("🗃️ 监控标的池 (支持拼音/代码/汉字搜索)", display_list,
-                                     default=display_list[:3] if display_list else [], key="b_pool")
+    selected_stocks = st.multiselect("🗃️ 监控标的池", display_list, default=display_list[:3] if display_list else [],
+                                     key="b_pool")
 
-    # 双列宽阔排版
     with st.expander("🎯 寻优精度与步长设置", expanded=True):
-        col_p1, col_p2 = st.columns(2)
-        p1_param = p2_param = None  # 初始化变量
-        la = lb = ""  # 初始化参数名称
+        opt_params = {k: v for k, v in strategy.params.items() if not isinstance(v.default, bool)}
+        bool_params = {k: v for k, v in strategy.params.items() if isinstance(v.default, bool)}
 
-        if strategy_type == "双均线动能策略":
-            with col_p1:
-                s_range = st.slider("短期范围", 2, 40, (5, 15), key="b_ma_sr")
-                s_step = st.number_input("👉 短期步长", 1, 10, 2, key="b_ma_ss")
-            with col_p2:
-                l_range = st.slider("长期范围", 20, 150, (30, 90), key="b_ma_lr")
-                l_step = st.number_input("👉 长期步长", 1, 20, 5, key="b_ma_ls")
-            p1_param, p2_param = (s_range[0], s_range[1], s_step), (l_range[0], l_range[1], l_step)
-
-        elif strategy_type == "布林带突破策略":
-            with col_p1:
-                w_range = st.slider("周期范围", 10, 100, (15, 30), key="b_boll_wr")
-                w_step = st.number_input("👉 周期步长", 1, 10, 5, key="b_boll_ws")
-            with col_p2:
-                std_range = st.slider("标准差范围", 1.0, 3.5, (1.5, 2.5), key="b_boll_sr")
-                std_step = st.number_input("👉 标准差步长", 0.1, 1.0, 0.1, key="b_boll_ss")
-            p1_param, p2_param = (w_range[0], w_range[1], w_step), (std_range[0], std_range[1], std_step)
-
-        elif strategy_type == "RSI极值反转策略":
-            with col_p1:
-                lower_range = st.slider("抄底线范围", 10, 50, (20, 40), key="b_rsi_lr")
-                lower_step = st.number_input("👉 抄底线步长", 1, 10, 5, key="b_rsi_ls")
-            with col_p2:
-                upper_range = st.slider("逃顶线范围", 50, 95, (60, 85), key="b_rsi_ur")
-                upper_step = st.number_input("👉 逃顶线步长", 1, 10, 5, key="b_rsi_us")
-            p1_param, p2_param = (lower_range[0], lower_range[1], lower_step), (upper_range[0], upper_range[1], upper_step)
-
-        elif strategy_type == "MACD趋势策略":
-            with col_p1:
-                fast_range = st.slider("快线范围", 5, 40, (10, 20), key="b_macd_fr")
-                fast_step = st.number_input("👉 快线步长", 1, 10, 2, key="b_macd_fs")
-            with col_p2:
-                slow_range = st.slider("慢线范围", 15, 100, (20, 40), key="b_macd_sr")
-                slow_step = st.number_input("👉 慢线步长", 1, 20, 2, key="b_macd_ss")
-            p1_param, p2_param = (fast_range[0], fast_range[1], fast_step), (slow_range[0], slow_range[1], slow_step)
-
-        elif strategy_type == "KDJ震荡策略":
-            with col_p1:
-                buy_range = st.slider("抄底线范围", -20, 30, (-10, 10), key="b_kdj_br")
-                buy_step = st.number_input("👉 抄底步长", 1, 10, 5, key="b_kdj_bs")
-            with col_p2:
-                sell_range = st.slider("逃顶线范围", 70, 120, (90, 110), key="b_kdj_sr")
-                sell_step = st.number_input("👉 逃顶步长", 1, 10, 5, key="b_kdj_ss")
-            p1_param, p2_param = (buy_range[0], buy_range[1], buy_step), (sell_range[0], sell_range[1], sell_step)
-        else:
-            st.error(f"❌ 未知的策略类型：{strategy_type}")
+        opt_keys = list(opt_params.keys())[:2]
+        if len(opt_keys) < 2:
+            st.warning("该策略参数不足，无法雷达扫描。")
             return
+
+        col_p1, col_p2 = st.columns(2)
+        grid_values = []
+
+        for i, key in enumerate(opt_keys):
+            p_def = opt_params[key]
+            with (col_p1 if i == 0 else col_p2):
+                desc = p_def.description or key
+                def_min = p_def.min_val if p_def.min_val is not None else int(p_def.default * 0.5)
+                def_max = p_def.max_val if p_def.max_val is not None else int(p_def.default * 2.0)
+
+                if isinstance(p_def.default, float):
+                    p_range = st.slider(f"{desc} 范围", float(def_min), float(def_max),
+                                        (float(p_def.default * 0.8), float(p_def.default * 1.2)), key=f"b_r_{key}")
+                    p_step = st.number_input(f"👉 {desc} 步长", 0.01, 1.0, float(p_def.step), key=f"b_s_{key}")
+                    grid_values.append(list(np.arange(p_range[0], p_range[1] + p_step * 0.1, p_step)))
+                else:
+                    p_range = st.slider(f"{desc} 范围", int(def_min), int(def_max),
+                                        (int(p_def.default * 0.8), int(p_def.default * 1.2)), key=f"b_r_{key}")
+                    p_step = st.number_input(f"👉 {desc} 步长", 1, max(10, int((def_max - def_min) / 5)),
+                                             int(p_def.step), key=f"b_s_{key}")
+                    grid_values.append(list(range(p_range[0], p_range[1] + 1, p_step)))
+
+        # 🚀 同理渲染静态开关
+        if bool_params:
+            st.divider()
+            st.write("🛠️ **静态策略开关** (应用到全部标的测试)")
+            bool_cols = st.columns(len(bool_params))
+            for i, (p_name, p_def) in enumerate(bool_params.items()):
+                with bool_cols[i]:
+                    val = st.toggle(p_def.description or p_name, value=p_def.default, key=f"b_{strategy_type}_{p_name}")
+                    opt_keys.append(p_name)
+                    grid_values.append([val])
 
     c1, c2 = st.columns([1, 1])
     with c1:
         pos_ratio = st.number_input("单次扫描测试仓位", 0.1, 1.0, 0.8, key="b_pos")
     with c2:
-        st.write("")
-        run_opt = st.button("📡 启动全量寻优扫描", use_container_width=True, type="primary", key="b_run")
+        st.write(""); run_opt = st.button("📡 启动全量寻优扫描", use_container_width=True, type="primary", key="b_run")
 
     if run_opt:
         if not selected_stocks:
-            st.warning("请至少在【监控标的池】中选择一只股票！")
+            st.warning("请选择股票！")
             return
 
         all_res = []
@@ -87,11 +79,13 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
         for i, disp in enumerate(selected_stocks):
             sym = disp.split('(')[-1].replace(')', '').strip()
             name = disp.split(' (')[0]
-
             raw = get_daily_hfq_data(sym, start_date, end_date)
+
             if raw is not None and not raw.empty:
-                res_df, la, lb = optimize_strategy(raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                                                   p1_param, p2_param, start_date, end_date)
+                res_df, la, lb = optimize_strategy(
+                    raw, strategy_type, initial_capital, global_filters, pos_ratio,
+                    opt_keys, grid_values, start_date, end_date
+                )
 
                 if res_df is not None and not res_df.empty:
                     best = res_df.sort_values('夏普比率', ascending=False).iloc[0]
@@ -108,7 +102,6 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                         "深度建议": advice_desc
                     })
             prog.progress((i + 1) / len(selected_stocks))
-
         prog.empty()
 
         if all_res:
@@ -123,23 +116,18 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                 use_container_width=True
             )
         else:
-            st.error("❌ 未发掘任何有效交易信号，可能过滤条件过于严苛。")
+            st.error("❌ 未发掘任何有效交易信号")
 
 
 def generate_advice(best):
-    """基于机构视角的深度智能诊断算法"""
-    sharpe = best['夏普比率']
-    plr = best['盈亏比']
-    dd = abs(best['最大回撤 (%)'])
-    wr = best['胜率 (%)']
-
+    sharpe, plr, dd, wr = best['夏普比率'], best['盈亏比'], abs(best['最大回撤 (%)']), best['胜率 (%)']
     if sharpe > 1.2 and plr > 1.5 and wr > 45:
-        return "🌟 绝佳主力", f"收益风险比极佳 (夏普 {sharpe:.2f})。盈利空间对亏损风险形成压倒性优势，建议作为核心仓位跟踪。"
+        return "🌟 绝佳主力", f"收益风险比极佳 (夏普 {sharpe:.2f})。盈利空间对亏损风险形成压倒性优势。"
     elif sharpe > 0.8 and plr > 1.0:
-        return "✅ 稳健防守", f"表现良好且抗击打能力强。能稳步实现净值复利累积，适合作为投资组合的底仓防御型配置。"
+        return "✅ 稳健防守", f"表现良好且抗击打能力强。能稳步实现净值复利累积。"
     elif plr < 1.0 and wr > 55:
-        return "⚠️ 赚小亏大", f"胜率虽有 {wr:.1f}%，但盈亏比严重失衡。极易出现“赚几次不够亏一次”的情况，实盘必须严设止损。"
+        return "⚠️ 赚小亏大", f"极易出现“赚几次不够亏一次”的情况，实盘必须严设止损。"
     elif dd > 25:
-        return "🌋 波动剧烈", f"历史最大回撤深达 {dd:.1f}%，该参数组合极容易遭遇极端杀跌。不建议盲目重仓介入。"
+        return "🌋 波动剧烈", f"历史最大回撤深达 {dd:.1f}%，极容易遭遇极端杀跌。"
     else:
-        return "☕ 建议观望", f"核心动能不足，极易受震荡杂波干扰 (夏普 {sharpe:.2f})。资金周转效率低下，建议放弃或等待右侧信号。"
+        return "☕ 建议观望", f"核心动能不足，极易受震荡杂波干扰 (夏普 {sharpe:.2f})。"

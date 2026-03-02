@@ -34,7 +34,7 @@ def apply_bollinger_strategy(
 
     # 1. 计算布林带
     strat_df['MA'] = strat_df['收盘'].rolling(window=window).mean()
-    strat_df['std'] = strat_df['收盘'].rolling(window=window).std()
+    strat_df['std'] = strat_df['收盘'].rolling(window=window).std(ddof=0)
     strat_df['Upper'] = strat_df['MA'] + (std_dev * strat_df['std'])
     strat_df['Lower'] = strat_df['MA'] - (std_dev * strat_df['std'])
 

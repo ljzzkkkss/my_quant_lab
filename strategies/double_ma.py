@@ -12,6 +12,8 @@
 import pandas as pd
 import numpy as np
 from .base import Strategy, auto_register
+from configs.settings import get_filter_config
+filter_conf = get_filter_config()
 
 
 def apply_double_ma_strategy(
@@ -39,10 +41,10 @@ def apply_double_ma_strategy(
     data['SMA_long'] = data['收盘'].rolling(window=long_window).mean()
 
     # 2. 纯手工计算 MACD (经典参数：12, 26, 9)
-    exp1 = data['收盘'].ewm(span=12, adjust=False).mean()
-    exp2 = data['收盘'].ewm(span=26, adjust=False).mean()
-    data['DIF'] = exp1 - exp2  # 快线
-    data['DEA'] = data['DIF'].ewm(span=9, adjust=False).mean()  # 慢线
+    exp1 = data['收盘'].ewm(span=filter_conf.MACD_FAST, adjust=False).mean()
+    exp2 = data['收盘'].ewm(span=filter_conf.MACD_SLOW, adjust=False).mean()
+    data['DIF'] = exp1 - exp2
+    data['DEA'] = data['DIF'].ewm(span=filter_conf.MACD_SIGNAL, adjust=False).mean()
     data['MACD'] = (data['DIF'] - data['DEA']) * 2  # MACD 柱子
 
     # 3. 产生原始的均线交叉状态
