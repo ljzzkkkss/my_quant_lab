@@ -49,6 +49,8 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
             desc = p_def.description or key
             if isinstance(p_def.default, bool):
                 val = st.toggle(f"🛠️ {desc}", value=p_def.default, key=f"a_{key}")
+                if hasattr(p_def, 'impact') and p_def.impact:
+                    st.caption(f"💡 *影响：{p_def.impact}*")
                 opt_keys.append(key)
                 grid_values.append([val])
                 continue
@@ -57,6 +59,8 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
                 c1, c2, c3 = st.columns([1.5, 1, 1.5])
                 with c1:
                     st.markdown(f"**{desc}**")
+                    if hasattr(p_def, 'impact') and p_def.impact:
+                        st.caption(f"💡 *{p_def.impact}*")
                 with c2:
                     is_opt = st.checkbox("参与多维寻优", value=(len(dynamic_dims) < 2), key=f"chk_{key}")
                 with c3:
