@@ -94,6 +94,7 @@ def main():
         with st.expander("🛠️ 自定义手续费与滑点", expanded=False):
             buy_fee = st.number_input("买入费率 (‱)", 0.0, 30.0, 3.0, 0.5, help="默认万三") / 10000.0
             sell_fee = st.number_input("卖出费率 (含印花税 ‱)", 0.0, 50.0, 8.0, 0.5, help="默认万八") / 10000.0
+            min_comm = st.number_input("单笔最低手续费 (元)", 0.0, 50.0, 5.0, 1.0)
             slippage = st.number_input("双边滑点 (‰)", 0.0, 10.0, 1.0, 0.5, help="默认千分之一") / 1000.0
             min_shares = st.number_input("最小交易单位 (股)", 1, 1000, 100, 100)
 
@@ -102,7 +103,7 @@ def main():
             'use_index': use_index, 'vol_ratio': vol_ratio,
             'rsi_limit': rsi_limit, 'slope_min': slope_min,
             'tp': global_tp, 'sl': global_sl,
-            'buy_fee': buy_fee, 'sell_fee': sell_fee,
+            'buy_fee': buy_fee, 'sell_fee': sell_fee,'min_comm': min_comm,
             'slippage': slippage, 'min_shares': int(min_shares)
         }
 

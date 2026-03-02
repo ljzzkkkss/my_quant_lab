@@ -2,8 +2,9 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from typing import Dict, Any, Tuple, List
-from configs.settings import get_backtest_config
+from configs.settings import get_trading_config, get_backtest_config
 
+trading_conf = get_trading_config()
 bt_conf = get_backtest_config()
 
 
@@ -14,13 +15,14 @@ def run_backtest(
         global_filters: Dict
 ) -> pd.DataFrame:
     # 🚀 从全局参数动态读取前端配置的交易成本
-    tp = global_filters.get('tp', 0.15)
-    sl = global_filters.get('sl', -0.08)
-    slippage = global_filters.get('slippage', 0.001)
-    buy_fee = global_filters.get('buy_fee', 0.0003)
-    sell_fee = global_filters.get('sell_fee', 0.0008)
-    min_shares = global_filters.get('min_shares', 100)
-    min_comm = 5.0
+    filters = global_filters or {}
+    tp = filters.get('tp', trading_conf.DEFAULT_TAKE_PROFIT)
+    sl = filters.get('sl', trading_conf.DEFAULT_STOP_LOSS)
+    slippage = filters.get('slippage', trading_conf.DEFAULT_SLIPPAGE)
+    buy_fee = filters.get('buy_fee', trading_conf.BUY_FEE_RATE)
+    sell_fee = filters.get('sell_fee', trading_conf.SELL_FEE_RATE)
+    min_comm = filters.get('min_comm', trading_conf.MIN_COMMISSION)
+    min_shares = filters.get('min_shares', trading_conf.MIN_SHARES_MULTIPLE)
 
     bt_df = df.copy()
     n = len(bt_df)
@@ -183,13 +185,15 @@ def run_portfolio_backtest(
         global_filters: Dict,
         dynamic_sizing: bool = True
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    tp = global_filters.get('tp', 0.15)
-    sl = global_filters.get('sl', -0.08)
-    slippage = global_filters.get('slippage', 0.001)
-    buy_fee = global_filters.get('buy_fee', 0.0003)
-    sell_fee = global_filters.get('sell_fee', 0.0008)
-    min_shares = global_filters.get('min_shares', 100)
-    min_comm = 5.0
+    filters = global_filters or {}
+    tp = filters.get('tp', trading_conf.DEFAULT_TAKE_PROFIT)
+    sl = filters.get('sl', trading_conf.DEFAULT_STOP_LOSS)
+    slippage = filters.get('slippage', trading_conf.DEFAULT_SLIPPAGE)
+    buy_fee = filters.get('buy_fee', trading_conf.BUY_FEE_RATE)
+    sell_fee = filters.get('sell_fee', trading_conf.SELL_FEE_RATE)
+    min_comm = filters.get('min_comm', trading_conf.MIN_COMMISSION)
+    min_shares = filters.get('min_shares', trading_conf.MIN_SHARES_MULTIPLE)
+
 
     all_dates = sorted(pd.to_datetime(list(next(iter(all_stocks_data.values())).index)))
     cash = initial_capital
@@ -236,7 +240,7 @@ def run_portfolio_backtest(
                 commission = max(min_comm, sell_val * sell_fee)
                 cash += (sell_val - commission)
                 trade_log.append({
-                    '日期': date, '股票': sym, '动作': '🔴 卖出',
+                    '日期': date, '股票': sym, '动作': '🟢 卖出',
                     '成交价': execute_price, '股数': pos['shares'],
                     '金额': round(sell_val, 2), '原因': reason
                 })
@@ -270,7 +274,7 @@ def run_portfolio_backtest(
                             cash -= (actual_cost + comm)
                             active_positions[sym] = {'shares': shares, 'buy_price': buy_price_adj}
                             trade_log.append({
-                                '日期': date, '股票': sym, '动作': '🟢 买入',
+                                '日期': date, '股票': sym, '动作': '🔴 买入',
                                 '成交价': buy_price, '股数': shares,
                                 '金额': round(actual_cost, 2), '原因': '动态分仓'
                             })
