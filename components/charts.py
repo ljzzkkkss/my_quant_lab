@@ -1,15 +1,15 @@
 import plotly.graph_objects as go
 
-
 def plot_interactive_kline(df, short_window=5, long_window=20, title="K线信号解析"):
     fig = go.Figure()
 
-    # 绘制基础 K 线
+    # 🚀 核心修复：强行指定 A 股的红涨绿跌习惯
     fig.add_trace(go.Candlestick(
-        x=df.index, open=df['开盘'], high=df['最高'], low=df['最低'], close=df['收盘'], name="K线"
+        x=df.index, open=df['开盘'], high=df['最高'], low=df['最低'], close=df['收盘'], name="K线",
+        increasing_line_color='red', decreasing_line_color='green'
     ))
 
-    # 动态匹配并绘制策略指标线 (有什么画什么，防报错)
+    # 动态匹配并绘制策略指标线
     if 'SMA_short' in df.columns:
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA_short'], mode='lines', name='短期均线',
                                  line=dict(color='orange', width=1.5)))
