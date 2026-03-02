@@ -45,7 +45,7 @@ def fetch_from_baostock(symbol, start_date, end_date):
         while rs.next():
             data_list.append(rs.get_row_data())
 
-    # 【第二次尝试(核心修复)】：如果拿不到数据(ETF通常不支持复权)，改用不复权重新请求！
+    # 【第二次尝试】：如果拿不到数据(ETF通常不支持复权)，改用不复权重新请求！
     if not data_list:
         rs = bs.query_history_k_data_plus(
             bs_code, "date,open,close,high,low,volume",
@@ -58,7 +58,6 @@ def fetch_from_baostock(symbol, start_date, end_date):
     bs.logout()
 
     if not data_list:
-        print(f"⚠️ 查无数据 (可能不支持该标的或停牌): {symbol}")
         return pd.DataFrame()
 
     df = pd.DataFrame(data_list, columns=rs.fields)
@@ -74,14 +73,36 @@ def fetch_from_baostock(symbol, start_date, end_date):
 
 
 def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: str = "data"):
+    # ==========================================
+    # 🛡️ 防火墙 1 & 2：时间旅行纠正与盘中拦截
+    # ==========================================
+    now = datetime.now()
+    today_dt = pd.to_datetime(now.strftime('%Y-%m-%d'))
+
+    req_start_dt = pd.to_datetime(start_date)
+    req_end_dt = pd.to_datetime(end_date)
+
+    # 1. 拦截未来时间：最高只能请求到今天
+    if req_end_dt > today_dt:
+        req_end_dt = today_dt
+
+    # 2. 拦截盘中时间：如果是今天，且当前时间早于 15:30 (收盘数据未清算完)，强制退回昨天
+    if req_end_dt == today_dt:
+        if now.hour < 15 or (now.hour == 15 and now.minute < 30):
+            req_end_dt = today_dt - timedelta(days=1)
+
+    # 修正后如果 start 大于 end (例如在长假期间被拦截)，直接返回空
+    if req_start_dt > req_end_dt:
+        return None
+
+    # ==========================================
+    # 💾 读取本地台账与缓存
+    # ==========================================
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
     file_path = os.path.join(cache_dir, f"{symbol}.csv")
     meta_path = os.path.join(cache_dir, f"{symbol}_meta.json")
-
-    req_start = pd.to_datetime(start_date)
-    req_end = pd.to_datetime(end_date)
 
     meta = {"start": "2099-01-01", "end": "1970-01-01"}
     if os.path.exists(meta_path):
@@ -93,54 +114,81 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
 
     local_df = pd.DataFrame()
     if os.path.exists(file_path):
-        local_df = pd.read_csv(file_path, index_col='日期', parse_dates=True)
+        try:
+            local_df = pd.read_csv(file_path, index_col='日期', parse_dates=True)
+        except Exception:
+            pass  # 防止 CSV 损坏
 
+    # ==========================================
+    # 🌐 场景 A：首次拉取
+    # ==========================================
     if local_df.empty:
         print(f"🌐 未发现 {symbol} 的本地数据库，执行首次拉取...")
-        local_df = fetch_from_baostock(symbol, start_date, end_date)
+        local_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), req_end_dt.strftime('%Y%m%d'))
 
-        # 【核心修复】：无论是否拉到数据，都要写台账！防止下次又被当成“没拉过”而无限重试
-        meta['start'] = req_start.strftime("%Y-%m-%d")
-        meta['end'] = req_end.strftime("%Y-%m-%d")
+        # 🚨 防火墙 3：如果首次拉取彻底没数据（断网或退市），绝对不要生成空台账，直接抛弃！
+        if local_df is None or local_df.empty:
+            print(f"❌ {symbol} 彻底无数据(可能停牌或网络错误)，跳过台账建立。")
+            return None
+
+        # 只有真正拿到数据，才建立安全台账
+        meta['start'] = req_start_dt.strftime("%Y-%m-%d")
+        meta['end'] = req_end_dt.strftime("%Y-%m-%d")
         with open(meta_path, 'w', encoding='utf-8') as f:
             json.dump(meta, f)
 
-        if not local_df.empty:
-            local_df.to_csv(file_path, encoding='utf-8-sig')
-            print(f"✅ 首次拉取成功，建立台账：{meta_path}")
-        else:
-            print(f"❌ {symbol} 彻底无数据，已记录为空台账，跳过后续重复拉取。")
+        local_df.to_csv(file_path, encoding='utf-8-sig')
+        print(f"✅ 首次拉取成功，建立台账：{meta_path}")
 
-        return local_df.loc[req_start:req_end] if not local_df.empty else None
+        mask = (local_df.index >= req_start_dt) & (local_df.index <= req_end_dt)
+        return local_df.loc[mask]
 
+    # ==========================================
+    # 🔄 场景 B：增量更新
+    # ==========================================
     cache_start_cal = pd.to_datetime(meta['start'])
     cache_end_cal = pd.to_datetime(meta['end'])
     needs_update = False
 
-    if req_start < cache_start_cal:
+    # 1. 向前补齐历史
+    if req_start_dt < cache_start_cal:
         fetch_end = (cache_start_cal - timedelta(days=1)).strftime("%Y%m%d")
-        print(f"🌐 增量补齐历史: {req_start.strftime('%Y%m%d')} 至 {fetch_end}...")
-        older_df = fetch_from_baostock(symbol, req_start.strftime('%Y%m%d'), fetch_end)
+        print(f"🌐 增量补齐历史: {req_start_dt.strftime('%Y%m%d')} 至 {fetch_end}...")
+        older_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), fetch_end)
+
         if not older_df.empty:
             local_df = pd.concat([older_df, local_df])
             needs_update = True
-        meta['start'] = req_start.strftime("%Y-%m-%d")
 
-    if req_end > cache_end_cal:
+        # 无论有没有补到历史数据（可能那会儿还没上市），都把台账往前推，防止每次查都重复请求
+        meta['start'] = req_start_dt.strftime("%Y-%m-%d")
+
+    # 2. 向后同步最新
+    if req_end_dt > cache_end_cal:
         fetch_start = (cache_end_cal + timedelta(days=1)).strftime("%Y%m%d")
-        print(f"🌐 增量同步最新: {fetch_start} 至 {req_end.strftime('%Y%m%d')}...")
-        newer_df = fetch_from_baostock(symbol, fetch_start, req_end.strftime('%Y%m%d'))
+        print(f"🌐 增量同步最新: {fetch_start} 至 {req_end_dt.strftime('%Y%m%d')}...")
+        newer_df = fetch_from_baostock(symbol, fetch_start, req_end_dt.strftime('%Y%m%d'))
+
         if not newer_df.empty:
             local_df = pd.concat([local_df, newer_df])
             needs_update = True
-        meta['end'] = req_end.strftime("%Y-%m-%d")
 
+        # 💡 核心逻辑：因为我们有防火墙1&2，这里的 req_end_dt 绝对是安全且已收盘的日期。
+        # 如果 newer_df 是空，只说明这两天是周末或节假日，我们理直气壮地把台账往后推！
+        meta['end'] = req_end_dt.strftime("%Y-%m-%d")
+
+    # ==========================================
+    # 💾 数据落盘与切片返回
+    # ==========================================
     if needs_update and not local_df.empty:
         local_df = local_df[~local_df.index.duplicated(keep='last')].sort_index()
         local_df.to_csv(file_path, encoding='utf-8-sig')
 
-    # 只要有写操作，就保存台账
+    # 只要台账日期有推进，就更新 JSON
     with open(meta_path, 'w', encoding='utf-8') as f:
         json.dump(meta, f)
 
-    return local_df.loc[req_start:req_end] if not local_df.empty else None
+    mask = (local_df.index >= req_start_dt) & (local_df.index <= req_end_dt)
+    res_df = local_df.loc[mask]
+
+    return res_df if not res_df.empty else None
