@@ -90,7 +90,9 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
         all_data_for_bt = {}
         prog = st.progress(0)
         status = st.empty()
-
+        index_data = None
+        if global_filters.get('use_index'):
+            index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date)
         for i, disp in enumerate(selected_pool):
             sym = disp.split('(')[-1].replace(')', '').strip()
             status.text(f"正在准备信号: {sym}...")
@@ -99,7 +101,7 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
 
             # 🚀 采用前端面板收集到的动态参数 (param_values) 而非默认参数
             df = strategy.generate_signals(raw, **param_values)
-            df = apply_advanced_filters(df, None, global_filters)
+            df = apply_advanced_filters(df, index_data, global_filters)
 
             df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)
             if 'position_diff' not in df.columns:

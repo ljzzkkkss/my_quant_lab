@@ -38,9 +38,12 @@ def apply_advanced_filters(df, index_df, params):
     # 5. 大盘滤镜逻辑
     df['index_ok'] = True
     if params.get('use_index') and index_df is not None:
-        index_ma = index_df['收盘'].rolling(20).mean()
-        # 将大盘状态对齐到个股日期
-        index_ma = index_df['收盘'].rolling(filter_conf.INDEX_MA_PERIOD).mean()
+        # 🚀 动态读取前端传来的均线周期
+        idx_period = params.get('index_ma_period', filter_conf.INDEX_MA_PERIOD)
+        index_ma = index_df['收盘'].rolling(idx_period).mean()
+
+        # 🚀 核心修复Bug：原来缺失了这一行，导致大盘择时结果没有被真正应用！
+        df['index_ok'] = (index_df['收盘'] > index_ma).reindex(df.index, method='ffill').fillna(False)
 
     # 综合过滤条件
     df['filter_pass'] = (

@@ -37,14 +37,17 @@ def apply_advanced_filters(df: pd.DataFrame, index_df: Optional[pd.DataFrame], f
 
     df['index_ok'] = True
     if filters.get('use_index') and index_df is not None:
-        idx_ma = index_df['收盘'].rolling(filter_conf.INDEX_MA_PERIOD).mean()
+        # 🚀 读取前端设定的周期
+        idx_period = filters.get('index_ma_period', filter_conf.INDEX_MA_PERIOD)
+        idx_ma = index_df['收盘'].rolling(idx_period).mean()
+        # 🚀 核心修复Bug
         df['index_ok'] = (index_df['收盘'] > idx_ma).reindex(df.index, method='ffill').fillna(False)
 
     df['filter_pass'] = (
-        (df['volume_ratio'] >= filters.get('vol_ratio', 0)) &
-        (df['rsi'] <= filters.get('rsi_limit', 100)) &
-        (df['slope'] >= filters.get('slope_min', -999)) &
-        (df['index_ok'] == True)
+            (df['volume_ratio'] >= filters.get('vol_ratio', 0)) &
+            (df['rsi'] <= filters.get('rsi_limit', 100)) &
+            (df['slope'] >= filters.get('slope_min', -999)) &
+            (df['index_ok'] == True)
     )
     return df
 

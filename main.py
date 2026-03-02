@@ -97,10 +97,16 @@ def main():
                 trail_rate = st.slider("🔪 撤退红线 (从峰值回撤即平仓)", 1, 30, 5) / 100.0
         else:
             trail_act, trail_rate = 0.10, 0.05
-
         st.divider()
         st.header("🛡️ 过滤引擎 (实战宽松版)")
         use_index = st.toggle("开启大盘择时 (HS300)", value=False, key="tg_index")
+
+        # 🚀 修复1：如果开启大盘择时，允许选择均线周期
+        if use_index:
+            index_ma_period = st.number_input("大盘均线过滤周期", min_value=5, max_value=250, value=20, step=5,
+                                              key="ni_idx_ma")
+        else:
+            index_ma_period = 20
         vol_ratio = st.slider("成交量放大倍数 (量比)", 0.0, 3.0, 0.0, 0.1, key="sl_vol")
         rsi_limit = st.slider("RSI 超买拦截阈值", 50, 95, 90, key="sl_rsi")
         slope_min = st.slider("趋势最小向上斜率", -0.5, 1.0, -0.2, 0.1, key="sl_slope")
@@ -117,8 +123,8 @@ def main():
 
         # 🚀 修改：整合所有参数下传给底层的引擎
         global_filters = {
-            'use_index': use_index, 'vol_ratio': vol_ratio,
-            'rsi_limit': rsi_limit, 'slope_min': slope_min,
+            'use_index': use_index, 'index_ma_period': index_ma_period,  # 新增
+            'vol_ratio': vol_ratio, 'rsi_limit': rsi_limit, 'slope_min': slope_min,
             'tp': global_tp, 'sl': global_sl,
             'use_trailing': use_trailing, 'trail_act': trail_act, 'trail_rate': trail_rate,
             'buy_fee': buy_fee, 'sell_fee': sell_fee, 'min_comm': min_comm,
