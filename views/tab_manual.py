@@ -6,6 +6,7 @@ from backtest.optimizer import apply_advanced_filters
 from components.charts import plot_interactive_kline
 from configs.settings import get_backtest_config
 from strategies.base import StrategyRegistry
+from utils.market_analyzer import MarketAnalyzer
 
 bt_conf = get_backtest_config()
 
@@ -60,11 +61,64 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
             pos_ratio = st.slider("买入仓位比例", 0.1, 1.0, 1.0, key="m_pos")
         with c_btn:
             st.write("")  # 下沉对齐滑块
-            run_btn = st.button("🚀 执行完整回测", use_container_width=True, type="primary", key="m_run")
+            btn_ph = st.empty() #创建占位符空按钮
+            run_btn = btn_ph.button("🚀 执行完整回测", use_container_width=True, type="primary", key="m_run")
 
     if run_btn:
-        with st.spinner('回测计算中...'):
+        btn_ph.button("⏳ 引擎高速运转中...", use_container_width=True, disabled=True, key="m_run_disabled")
+        with st.spinner('回测计算与盘口诊断中...'):
             raw_data = get_daily_hfq_data(symbol, start_date, end_date)
+            diagnostic = MarketAnalyzer.generate_diagnostic_report(raw_data)
+
+            if diagnostic:
+                st.divider()
+                st.subheader(f"🩺 {symbol} 实盘深度体检报告")
+
+                # 渲染体检仪表盘
+                c_score, c_vp, c_sr = st.columns(3)
+
+                with c_score:
+                    score = diagnostic['trend_score']
+                    color = "red" if score > 0 else "green" if score < 0 else "gray"
+                    st.metric("中期趋势共振得分", f"{score} 分", delta="多头控盘" if score > 0 else "空头压制",
+                              delta_color="normal" if score > 0 else "inverse")
+
+                with c_vp:
+                    st.markdown(
+                        f"**资金动能检测**：<br><span style='color:{diagnostic['vp_color']}; font-weight:bold; font-size:18px;'>{diagnostic['vp_status']}</span>",
+                        unsafe_allow_html=True)
+                    st.caption(diagnostic['vp_desc'])
+
+                with c_sr:
+                    st.markdown("**近期关键攻防点位**：")
+                    st.markdown(f"🧱 强力阻力位: **{diagnostic['resistance']:.2f}**")
+                    st.markdown(f"垫 核心支撑位: **{diagnostic['support']:.2f}**")
+
+                    # 计算盈亏比空间
+                    if diagnostic['resistance'] > diagnostic['current_price'] and diagnostic['current_price'] > \
+                            diagnostic['support']:
+                        up_space = (diagnostic['resistance'] / diagnostic['current_price']) - 1
+                        down_space = 1 - (diagnostic['support'] / diagnostic['current_price'])
+                        st.caption(
+                            f"当前盈亏空间比: **{up_space / down_space:.1f}** (向上{up_space * 100:.1f}% / 向下{down_space * 100:.1f}%)")
+                st.markdown("#### 📡 异动形态雷达 (近期捕捉)")
+                if diagnostic['patterns']:
+                    p_cols = st.columns(len(diagnostic['patterns']))
+                    for idx, pat in enumerate(diagnostic['patterns']):
+                        with p_cols[idx]:
+                            bg_color = "#ffe6e6" if pat['color'] == 'red' else "#e6ffe6"
+                            text_color = "#cc0000" if pat['color'] == 'red' else "#006600"
+                            st.markdown(
+                                f"""
+                                                <div style='background-color: {bg_color}; padding: 12px; border-radius: 8px; border-left: 5px solid {text_color};'>
+                                                    <h5 style='color: {text_color}; margin-top: 0;'>{pat['name']}</h5>
+                                                    <span style='font-size: 0.9em; color: #333;'>{pat['desc']}</span>
+                                                </div>
+                                                """, unsafe_allow_html=True
+                            )
+                else:
+                    # 💡 兜底提示：如果平淡无奇，就告诉你一切正常，证明雷达没坏！
+                    st.info("🍵 当前未检测到极端的 K 线异动或均线变盘形态，盘面运行较为平稳。")
             if raw_data is not None and not raw_data.empty:
                 # 调用底层接口，直接传入组装好的参数字典
                 strat_df = strategy.generate_signals(raw_data, **param_values)

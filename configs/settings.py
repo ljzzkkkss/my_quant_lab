@@ -39,6 +39,14 @@ class TradingConfig:
     DEFAULT_TRAILING_ACTIVATION: float = 0.10  # 盈利 10% 激活
     DEFAULT_TRAILING_RATE: float = 0.05        # 从最高点回撤 5% 平仓
 
+    def __post_init__(self):
+        if self.DEFAULT_TAKE_PROFIT <= 0:
+            raise ValueError("配置错误：止盈必须大于 0")
+        if self.DEFAULT_STOP_LOSS >= 0:
+            raise ValueError("配置错误：止损必须小于 0")
+        if self.BUY_FEE_RATE < 0 or self.SELL_FEE_RATE < 0:
+            raise ValueError("配置错误：手续费率不能为负数")
+
 @dataclass
 class DataConfig:
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -105,13 +105,17 @@ def optimize_strategy(
         param_grid_keys: List[str], param_grid_values: List[List[Any]],
         start_date: str, end_date: str,
         use_parallel: bool = True, max_workers: Optional[int] = None,
-        progress_callback: Optional[Callable[[float], None]] = None
+        progress_callback: Optional[Callable[[float], None]] = None,
+        preloaded_index: Optional[pd.DataFrame] = None
 ) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
     from utils.data_fetcher import get_daily_hfq_data
     import itertools
 
-    index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get(
-        'use_index') else None
+    if preloaded_index is not None:
+        index_data = preloaded_index
+    else:
+        index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get(
+            'use_index') else None
 
     # 🚀 真正的 N 维网格笛卡尔积
     combinations = list(itertools.product(*param_grid_values))

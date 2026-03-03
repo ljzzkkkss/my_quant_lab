@@ -26,7 +26,10 @@ def get_a_share_list():
                     return df_all
             except Exception:
                 pass
-
+    try:
+        st.toast("🌐 本地代码库已过期，正在从云端同步全市场 5000+ A股与 ETF 最新代码，请保持网络通畅...", icon="🔄")
+    except:
+        pass
     print("🌐 正在拉取全市场股票与 ETF 列表... (请保持网络通畅)")
 
     # ================== 🚀 新增：动态拉取全市场 ETF ==================

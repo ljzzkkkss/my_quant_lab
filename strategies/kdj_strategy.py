@@ -116,8 +116,8 @@ class KDJStrategy(Strategy):
         return "短线极其敏锐；遇主升浪易踏空"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        j_buy = float(kwargs.get('j_buy', self.j_buy))
-        j_sell = float(kwargs.get('j_sell', self.j_sell))
-        n = int(kwargs.get('n', self.n))
+        j_buy = self.get_param('j_buy', kwargs)
+        j_sell = self.get_param('j_sell', kwargs)
+        n = self.get_param('n', kwargs)
 
         return apply_kdj_strategy(df, j_buy, j_sell, n)

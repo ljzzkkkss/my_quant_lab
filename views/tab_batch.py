@@ -4,6 +4,7 @@ import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import optimize_strategy
 from strategies.base import StrategyRegistry
+from utils.data_context import DataContext
 
 
 def render_batch_tab(display_list, start_date, end_date, initial_capital, global_filters, strategy_type):
@@ -81,26 +82,31 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
         st.markdown(
             f"<div style='margin-top: 32px;'>预计单票扫描：<strong style='color:red;'>{total_comb}</strong> 个组合</div>",
             unsafe_allow_html=True)
-
-    run_opt = st.button("📡 启动全量寻优扫描", use_container_width=True, type="primary", key="b_run")
+    btn_ph = st.empty()
+    run_opt = btn_ph.button("📡 启动全量寻优扫描", use_container_width=True, type="primary", key="b_run")
 
     if run_opt:
+        btn_ph.button("⏳ 雷达全域扫描中...", use_container_width=True, disabled=True, key="b_run_disabled")
         if not selected_stocks:
             return st.warning("请选择股票！")
-
         all_res = []
         prog = st.progress(0)
+
+        # 🚀 核武器：构建全局数据中心
+        ctx = DataContext()
+        ctx.preload(selected_stocks, start_date, end_date, global_filters.get('use_index'))
 
         for i, disp in enumerate(selected_stocks):
             sym = disp.split('(')[-1].replace(')', '').strip()
             name = disp.split(' (')[0]
-            raw = get_daily_hfq_data(sym, start_date, end_date)
 
+            # 🚀 0毫秒延迟取数据
+            raw = ctx.get_stock(sym)
             if raw is not None and not raw.empty:
-                # 🚀 获取 N 维寻优结果和描述映射
                 res_df, desc_map = optimize_strategy(
                     raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                    opt_keys, grid_values, start_date, end_date
+                    opt_keys, grid_values, start_date, end_date,
+                    preloaded_index=ctx.index_data  # 🚀 直接把内存大盘数据穿透传给引擎
                 )
 
                 if res_df is not None and not res_df.empty:

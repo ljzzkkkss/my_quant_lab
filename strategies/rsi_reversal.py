@@ -111,8 +111,8 @@ class RSIStrategy(Strategy):
         return "震荡市印钞机；单边暴跌易腰斩"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        lower = float(kwargs.get('lower_bound', self.lower_bound))
-        upper = float(kwargs.get('upper_bound', self.upper_bound))
-        period = int(kwargs.get('rsi_period', self.rsi_period))
+        lower = self.get_param('lower_bound', kwargs)
+        upper = self.get_paramt('upper_bound', kwargs)
+        period = self.get_param('rsi_period', kwargs)
 
         return apply_rsi_strategy(df, lower, upper, period)

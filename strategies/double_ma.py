@@ -119,8 +119,8 @@ class DoubleMaStrategy(Strategy):
         return "捕捉大牛股主升浪；震荡市反复打脸"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        short_window = int(kwargs.get('short_window', self.short_window))
-        long_window = int(kwargs.get('long_window', self.long_window))
-        use_macd_filter = kwargs.get('use_macd_filter', self.use_macd_filter)
+        short_window = self.get_param('short_window', kwargs)
+        long_window = self.get_param('long_window', kwargs)
+        use_macd_filter = self.get_param('use_macd_filter', kwargs)
 
         return apply_double_ma_strategy(df, short_window, long_window, use_macd_filter)

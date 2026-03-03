@@ -103,9 +103,12 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
             f"<div style='margin-top: 32px;'>📊 预计扫描：<strong style='color:red;'>{total_comb}</strong> 个网格点</div>",
             unsafe_allow_html=True)
     with c3:
-        st.write(""); run_opt = st.button("🔥 开启暴力扫描", use_container_width=True, type="primary", key="a_run")
+        st.write("");
+        btn_ph = st.empty()
+        run_opt = btn_ph.button("🔥 开启暴力扫描", use_container_width=True, type="primary", key="a_run")
 
     if run_opt:
+        btn_ph.button("⏳ 多进程矩阵扫描中...", use_container_width=True, disabled=True, key="a_run_disabled")
         raw_data = get_daily_hfq_data(symbol, start_date, end_date)
         if raw_data is None or raw_data.empty: return st.error("❌ 无法获取数据")
 

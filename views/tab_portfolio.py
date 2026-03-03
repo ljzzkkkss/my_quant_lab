@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import apply_advanced_filters
 from backtest.engine import run_portfolio_backtest
+from utils.data_context import DataContext
 
 from strategies.base import StrategyRegistry
 from configs.settings import get_backtest_config
@@ -81,27 +81,34 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
         with c_4:
             st.write("")
             is_dynamic = st.toggle("开启动态复利", value=True)
-
-    if st.button("🚀 启动全量轮动回测", type="primary", use_container_width=True):
+    btn_ph = st.empty()
+    run_port = btn_ph.button("🚀 启动全量轮动回测", type="primary", use_container_width=True, key="p_run")
+    if run_port:
+        # 🚀 2. 瞬间锁死面板
+        btn_ph.button("⏳ 全局资金分配演算中...", type="primary", use_container_width=True, disabled=True,
+                      key="p_run_disabled")
         if not selected_pool:
             st.warning("请选择股票！")
             return
-
         all_data_for_bt = {}
         prog = st.progress(0)
         status = st.empty()
-        index_data = None
-        if global_filters.get('use_index'):
-            index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date)
+
+        # 🚀 核武器：构建全局数据中心，一波全拉到内存！
+        ctx = DataContext()
+        ctx.preload(selected_pool, start_date, end_date, global_filters.get('use_index'))
+
         for i, disp in enumerate(selected_pool):
             sym = disp.split('(')[-1].replace(')', '').strip()
             status.text(f"正在准备信号: {sym}...")
-            raw = get_daily_hfq_data(sym, start_date, end_date)
+
+            # 🚀 0毫秒延迟直接从内存抽取
+            raw = ctx.get_stock(sym)
             if raw is None or raw.empty: continue
 
-            # 🚀 采用前端面板收集到的动态参数 (param_values) 而非默认参数
             df = strategy.generate_signals(raw, **param_values)
-            df = apply_advanced_filters(df, index_data, global_filters)
+            # 传入内存大盘数据
+            df = apply_advanced_filters(df, ctx.index_data, global_filters)
 
             df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)
             if 'position_diff' not in df.columns:

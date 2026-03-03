@@ -42,9 +42,9 @@ class SwingGridStrategy(Strategy):
     def description(self) -> str: return "依托均线中枢高抛低吸，震荡市抽血机；单边大熊市易深套"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        bl = int(kwargs.get('baseline', self.baseline))
-        gd = float(kwargs.get('grid_down', self.grid_down)) / 100.0
-        gu = float(kwargs.get('grid_up', self.grid_up)) / 100.0
+        bl = self.get_param('baseline', kwargs)
+        gd = self.get_param('grid_down', kwargs)
+        gu = self.get_param('grid_up', kwargs)
         data = df.copy()
 
         data['Baseline'] = data['收盘'].rolling(window=bl).mean()

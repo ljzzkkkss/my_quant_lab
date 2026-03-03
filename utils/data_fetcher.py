@@ -7,6 +7,7 @@ import os
 import json
 import time
 import pandas as pd
+import streamlit as st
 import baostock as bs
 from datetime import datetime, timedelta
 from typing import Optional
@@ -191,6 +192,10 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # 🌐 场景 A：首次拉取
     # ==========================================
     if local_df.empty:
+        try:
+            st.toast(f"📥 首次发现标的 {symbol}，正在从云端下载全量历史数据，请稍候...", icon="☁️")
+        except:
+            pass
         print(f"🌐 未发现 {symbol} 的本地数据库，执行首次拉取...")
         local_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), req_end_dt.strftime('%Y%m%d'))
 
@@ -221,6 +226,10 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # 1. 向前补齐历史
     if req_start_dt < cache_start_cal:
         fetch_end = (cache_start_cal - timedelta(days=1)).strftime("%Y%m%d")
+        try:
+            st.toast(f"📥 正在为 {symbol} 补齐更早的历史数据...", icon="⏳")
+        except:
+            pass
         print(f"🌐 增量补齐历史：{req_start_dt.strftime('%Y%m%d')} 至 {fetch_end}...")
         older_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), fetch_end)
 
@@ -234,6 +243,10 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # 2. 向后同步最新
     if req_end_dt > cache_end_cal:
         fetch_start = (cache_end_cal + timedelta(days=1)).strftime("%Y%m%d")
+        try:
+            st.toast(f"📥 正在同步 {symbol} 最新的日线行情...", icon="⏳")
+        except:
+            pass
         print(f"🌐 增量同步最新：{fetch_start} 至 {req_end_dt.strftime('%Y%m%d')}...")
         newer_df = fetch_from_baostock(symbol, fetch_start, req_end_dt.strftime('%Y%m%d'))
 
