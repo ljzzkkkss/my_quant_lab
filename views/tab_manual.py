@@ -211,3 +211,6 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                             detail_df = detail_df.rename(
                                 columns={'收盘': '成交价', 'sell_reason': '离场原因', 'strategy_equity': '策略净值'})
                             st.dataframe(detail_df[['动作', '成交价', '离场原因', '策略净值']], use_container_width=True)
+                else:
+                    st.error("❌ 无法获取数据，请检查网络或股票代码")
+                    st.stop()
