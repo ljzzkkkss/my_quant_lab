@@ -116,8 +116,8 @@ class MACDStrategy(Strategy):
         return "波段稳健抗骗线；信号滞后"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        fast = kwargs.get('fast_period', self.fast_period)
-        slow = kwargs.get('slow_period', self.slow_period)
-        signal = kwargs.get('signal_period', self.signal_period)
+        fast = int(kwargs.get('fast_period', self.fast_period))
+        slow = int(kwargs.get('slow_period', self.slow_period))
+        signal = int(kwargs.get('signal_period', self.signal_period))
 
         return apply_macd_strategy(df, fast, slow, signal)

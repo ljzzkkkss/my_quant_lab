@@ -103,7 +103,7 @@ class BollingerBandsStrategy(Strategy):
         return "专抓妖股起爆点；假突破较多"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        window = kwargs.get('window', self.window)
-        std = kwargs.get('std_dev', self.std_dev)
+        window = int(kwargs.get('window', self.window))
+        std = float(kwargs.get('std_dev', self.std_dev))
 
         return apply_bollinger_strategy(df, window, std)

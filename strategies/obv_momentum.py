@@ -37,8 +37,8 @@ class OBVMomentumStrategy(Strategy):
     def description(self) -> str: return "资金先行，量价齐升时买入；缩量下跌或资金背离时卖出"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        om = kwargs.get('obv_ma', 30)
-        pm = kwargs.get('price_ma', 20)
+        om = int(kwargs.get('obv_ma', 30))
+        pm = int(kwargs.get('price_ma', 20))
         data = df.copy()
 
         # 1. 计算 OBV (能量潮指标)

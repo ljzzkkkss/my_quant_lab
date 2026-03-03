@@ -188,62 +188,103 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
             # =============== OOS 盲测与曲线绘制 ===============
             if enable_oos:
                 st.divider()
-                st.subheader("🔬 样本外盲测 (OOS) 深度检验")
+                st.subheader("🔬 样本外盲测 (OOS) 深度防过拟合检验")
+                st.info(
+                    "💡 **机构级评判标准**：盲测必须跑赢同期大盘(超额Alpha)，且夏普比率衰减不能过大。如果盲测夏普暴跌，说明该参数严重【过拟合】。")
+
                 top_10 = results_df.sort_values('夏普比率', ascending=False).head(10).copy()
                 oos_results = []
                 best_oos_bt_df = None
-                best_oos_sharpe = -999
+                best_oos_score = -999
+
+                # 🚀 辅助函数：精准计算独立切片区间的真实指标，彻底解决 attrs 继承作弊问题
+                def calc_slice_metrics(df_slice):
+                    if len(df_slice) < 2: return 0, 0, 0
+                    ret = ((df_slice['strategy_equity'].iloc[-1] / df_slice['strategy_equity'].iloc[0]) - 1) * 100
+                    bench_ret = ((df_slice['benchmark_equity'].iloc[-1] / df_slice['benchmark_equity'].iloc[
+                        0]) - 1) * 100
+
+                    daily_ret = df_slice['strategy_equity'].pct_change().fillna(0)
+                    daily_rf = bt_conf.RISK_FREE_RATE / bt_conf.TRADING_DAYS_PER_YEAR
+                    excess_ret = daily_ret - daily_rf
+                    std_ret = daily_ret.std()
+                    sharpe = float(
+                        (excess_ret.mean() / std_ret) * np.sqrt(bt_conf.TRADING_DAYS_PER_YEAR)) if std_ret > 0 else 0
+                    return ret, bench_ret, sharpe
 
                 for _, row in top_10.iterrows():
                     param_dict = {}
                     for k in opt_keys:
                         col_name = desc_map.get(k, k)
                         val = row.get(col_name)
-                        # 🚀 致命修复：把 DataFrame 里因浮点操作升维的 float 强转回其最初定义的数据类型！
-                        orig_type = type(strategy.params[k].default)
-                        if pd.notna(val):
-                            try:
-                                param_dict[k] = orig_type(val)
-                            except Exception:
-                                param_dict[k] = val
-                        else:
-                            param_dict[k] = strategy.params[k].default
+                        # 底层策略已加 int() 保护，这里正常传值即可
+                        param_dict[k] = val if pd.notna(val) else strategy.params[k].default
 
                     bt_test = run_single_param_backtest(raw_data, strategy_type, param_dict, global_filters,
                                                         initial_capital, pos_ratio)
 
+                    train_part = bt_test.iloc[:split_idx]
                     test_part = bt_test.iloc[split_idx:]
-                    if len(test_part) > 1:
-                        test_ret = ((test_part['strategy_equity'].iloc[-1] / test_part['strategy_equity'].iloc[
-                            0]) - 1) * 100
-                        test_sharpe = test_part.attrs.get('sharpe_ratio', 0)
+
+                    # 重新计算训练集与测试集的真实指标
+                    train_ret, train_bench, train_sharpe = calc_slice_metrics(train_part)
+                    test_ret, test_bench, test_sharpe = calc_slice_metrics(test_part)
+
+                    # 🚀 计算性能衰减率 (降幅越小越稳)
+                    if train_sharpe > 0:
+                        degradation = (test_sharpe / train_sharpe) * 100
                     else:
-                        test_ret, test_sharpe = 0, 0
+                        degradation = 0
+
+                    # 🚀 严苛的评级标准
+                    if test_ret > test_bench and test_sharpe > 0.5:
+                        status = "🌟 圣杯(超额收益)"
+                        score = test_sharpe * 2 + (test_ret - test_bench)  # 综合评分
+                    elif test_ret > 0:
+                        status = "⚠️ 正收益(未跑赢大盘)"
+                        score = test_sharpe
+                    else:
+                        status = "❌ 亏损崩盘"
+                        score = -1
 
                     res_dict = {desc_map.get(k, k): row.get(desc_map.get(k, k)) for k in
                                 valid_dims} if valid_dims else {}
-                    res_dict.update({"训练收益(%)": row['收益率 (%)'], "盲测收益(%)": round(test_ret, 2),
-                                     "盲测夏普": round(test_sharpe, 2), "状态": "✅ 通过" if test_ret > 0 else "❌ 崩盘"})
+                    res_dict.update({
+                        "训练夏普": round(train_sharpe, 2),
+                        "盲测夏普": round(test_sharpe, 2),
+                        "夏普留存率": f"{degradation:.1f}%",  # 新增展示指标
+                        "盲测收益": f"{test_ret:.2f}%",
+                        "基准收益": f"{test_bench:.2f}%",
+                        "评级": status
+                    })
                     oos_results.append(res_dict)
 
-                    # 记录盲测阶段最牛逼的选手
-                    if test_sharpe > best_oos_sharpe and test_ret > 0:
-                        best_oos_sharpe = test_sharpe
+                    # 记录盲测阶段综合得分最高的选手
+                    if score > best_oos_score:
+                        best_oos_score = score
                         best_oos_bt_df = bt_test
 
-                st.dataframe(pd.DataFrame(oos_results).style.map(
-                    lambda x: 'color: red' if x == '✅ 通过' else 'color: green' if x == '❌ 崩盘' else '',
-                    subset=['状态']), use_container_width=True)
+                # 渲染表格，加上热力色
+                st.dataframe(
+                    pd.DataFrame(oos_results).style.map(
+                        lambda x: 'color: #ff4b4b; font-weight: bold' if '圣杯' in str(x)
+                        else 'color: orange' if '⚠️' in str(x)
+                        else 'color: green' if '❌' in str(x) else '', subset=['评级']
+                    ).map(
+                        lambda x: 'color: red' if float(str(x).replace('%', '')) > 70 else 'color: green',
+                        subset=['夏普留存率']
+                    ),
+                    use_container_width=True
+                )
 
-                # 🚀 增加策略：画出 OOS 冠军的完整净值曲线，带虚线分割
                 if best_oos_bt_df is not None:
-                    st.markdown("#### 🥇 OOS 最强盲测组合 - 跨周期净值曲线")
+                    st.markdown("#### 🥇 OOS 最强盲测组合 - 全周期净值表现")
                     split_date = raw_data.index[split_idx]
                     fig_oos = plot_equity_curve(best_oos_bt_df,
-                                                title=f"最强组合表现 (紫虚线左为训练集，右为 OOS 盲测阶段)")
+                                                title=f"最佳组合表现 (紫虚线左侧为训练集，右侧为 OOS 盲测阶段)")
                     fig_oos.add_vline(x=split_date, line_width=2, line_dash="dash", line_color="purple")
-                    fig_oos.add_annotation(x=split_date, y=initial_capital, text="盲测起点", showarrow=True,
-                                           arrowhead=1)
+                    fig_oos.add_annotation(x=split_date, y=best_oos_bt_df['strategy_equity'].iloc[split_idx],
+                                           text="开启样本外盲测", showarrow=True, arrowhead=1)
                     st.plotly_chart(fig_oos, use_container_width=True)
             else:
                 st.subheader("📋 全局寻优排行榜")

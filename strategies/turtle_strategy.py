@@ -36,8 +36,8 @@ class TurtleStrategy(Strategy):
     def description(self) -> str: return "追逐绝对趋势，胜率偏低但盈亏比极大；震荡市易被打脸"
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        ew = kwargs.get('entry_window', 20)
-        xw = kwargs.get('exit_window', 10)
+        ew = int(kwargs.get('entry_window', 20))
+        xw = int(kwargs.get('exit_window', 10))
         data = df.copy()
 
         # 计算唐奇安通道 (注意：要用 shift(1) 避免用到当天的未来函数)
