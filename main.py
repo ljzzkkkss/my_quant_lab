@@ -50,7 +50,25 @@ def main():
             st.rerun()
 
         st.divider()
-        strategy_type = st.selectbox("🧠 核心策略模型", StrategyRegistry.list_strategies(), key="global_strategy")
+        # 🚀 1. 恢复：动态生成所有策略的 Tips 指南
+        available_strategies = StrategyRegistry.list_strategies()
+        strategy_tips = "**💡 策略流派库指南：**\n\n"
+        for name in available_strategies:
+            strat = StrategyRegistry.get(name)
+            strategy_tips += f"- **{name}**: {strat.description}\n"
+
+        # 🚀 2. 恢复：渲染带有 help 悬浮提示的联动下拉框
+        strategy_type = st.selectbox(
+            "🧠 核心策略模型",
+            available_strategies,
+            key="global_strategy",
+            help=strategy_tips
+        )
+
+        # 🚀 3. 恢复：实时高亮显示当前选中策略的说明
+        current_strat = StrategyRegistry.get(strategy_type)
+        if current_strat:
+            st.info(f"🎯 **当前策略**：{current_strat.description}")
 
         initial_capital = st.number_input("初始资金 (元)", 10000, 1000000, 100000, step=10000, key="global_capital")
         today = datetime.now()

@@ -167,8 +167,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # ==========================================
     # 💾 读取本地台账与缓存
     # ==========================================
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
+    os.makedirs(cache_dir, exist_ok=True)
 
     file_path = os.path.join(cache_dir, f"{symbol}.csv")
     meta_path = os.path.join(cache_dir, f"{symbol}_meta.json")

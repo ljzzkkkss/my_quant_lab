@@ -6,9 +6,9 @@ import plotly.express as px
 from backtest.optimizer import apply_advanced_filters
 from backtest.engine import run_portfolio_backtest
 from utils.data_context import DataContext
-
 from strategies.base import StrategyRegistry
 from configs.settings import get_backtest_config
+from utils.ui_helpers import ui_button_lock
 
 bt_conf = get_backtest_config()
 
@@ -84,41 +84,41 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
     btn_ph = st.empty()
     run_port = btn_ph.button("🚀 启动全量轮动回测", type="primary", use_container_width=True, key="p_run")
     if run_port:
-        # 🚀 2. 瞬间锁死面板
-        btn_ph.button("⏳ 全局资金分配演算中...", type="primary", use_container_width=True, disabled=True,
-                      key="p_run_disabled")
-        if not selected_pool:
-            st.warning("请选择股票！")
-            return
-        all_data_for_bt = {}
-        prog = st.progress(0)
-        status = st.empty()
+        with ui_button_lock(btn_ph, "⏳ 全局资金分配演算中...", "🚀 启动全量轮动回测", "p_run"):
+            if not selected_pool:
+                st.warning("请选择股票！")
+                st.stop()  # 优雅停止，上下文会自动恢复按钮
+            all_data_for_bt = {}
+            prog = st.progress(0)
+            status = st.empty()
 
-        # 🚀 核武器：构建全局数据中心，一波全拉到内存！
-        ctx = DataContext()
-        ctx.preload(selected_pool, start_date, end_date, global_filters.get('use_index'))
+            # 🚀 核武器：构建全局数据中心，一波全拉到内存！
+            ctx = DataContext()
+            ctx.preload(selected_pool, start_date, end_date, global_filters.get('use_index'))
 
-        for i, disp in enumerate(selected_pool):
-            sym = disp.split('(')[-1].replace(')', '').strip()
-            status.text(f"正在准备信号: {sym}...")
+            for i, disp in enumerate(selected_pool):
+                sym = disp.split('(')[-1].replace(')', '').strip()
+                status.text(f"正在准备信号: {sym}...")
 
-            # 🚀 0毫秒延迟直接从内存抽取
-            raw = ctx.get_stock(sym)
-            if raw is None or raw.empty: continue
+                # 🚀 0毫秒延迟直接从内存抽取
+                raw = ctx.get_stock(sym)
+                if raw is None or raw.empty: continue
 
-            df = strategy.generate_signals(raw, **param_values)
-            # 传入内存大盘数据
-            df = apply_advanced_filters(df, ctx.index_data, global_filters)
+                df = strategy.generate_signals(raw, **param_values)
+                # 传入内存大盘数据
+                df = apply_advanced_filters(df, ctx.index_data, global_filters)
 
-            df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)
-            if 'position_diff' not in df.columns:
-                df['position_diff'] = df['final_signal'].diff().fillna(0)
+                df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)
+                if 'position_diff' not in df.columns:
+                    df['position_diff'] = df['final_signal'].diff().fillna(0)
 
-            all_data_for_bt[sym] = df
-            prog.progress((i + 1) / len(selected_pool))
+                all_data_for_bt[sym] = df
+                prog.progress((i + 1) / len(selected_pool))
 
-        if all_data_for_bt:
-            # 🚀 传入资金分配模型参数
+            if not all_data_for_bt:
+                st.error("⚠️ 所选股票均无可用数据或全部停牌，请检查网络或更换标的池！")
+                st.stop()
+
             res_df, details_df, log_df = run_portfolio_backtest(
                 all_data_for_bt, initial_capital, max_pos, global_filters,
                 dynamic_sizing=is_dynamic, allocation_method=alloc_method
@@ -147,8 +147,10 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
         pick_date_str = st.select_slider("拖动滑块复盘任意一天的资产分布：", options=all_dates, value=all_dates[-1])
         pick_date = pd.to_datetime(pick_date_str)
 
-        day_holdings = st.session_state['p_details'][st.session_state['p_details']['date'] == pick_date]
-        day_summary = res.loc[pick_date]
+        day_holdings = st.session_state['p_details'][
+            st.session_state['p_details']['date'].astype(str).str.slice(0, 10) == pick_date_str[:10]
+            ]
+        day_summary = res.loc[pd.to_datetime(pick_date_str)]
 
         col_pie, col_tab = st.columns([2, 2])
         with col_pie:

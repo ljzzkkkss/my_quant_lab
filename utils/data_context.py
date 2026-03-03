@@ -35,5 +35,6 @@ class DataContext:
 
     def get_stock(self, symbol: str) -> Optional[pd.DataFrame]:
         """0延迟内存级提取个股数据"""
+        symbol = str(symbol)  # 🚀 强制转换保护
         clean_sym = symbol.split('(')[-1].replace(')', '').strip() if '(' in symbol else symbol
         return self.stock_data.get(clean_sym)
