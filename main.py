@@ -27,6 +27,9 @@ def main():
     if 'workspace_loaded' not in st.session_state:
         saved_state = load_workspace()
         for k, v in saved_state.items():
+            # 🚀 增加安全锁：如果是按钮的 key，直接丢弃，不放入 session_state
+            if k.startswith("btn_") or k.endswith("_run") or k.endswith("_done"):
+                continue
             st.session_state[k] = v
         st.session_state['workspace_loaded'] = True
         logger.info("♻️ UI 状态已从工作区恢复。")
