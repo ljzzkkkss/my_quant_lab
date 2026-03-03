@@ -12,6 +12,7 @@ import baostock as bs
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import pytz
 from configs.settings import get_data_config
 data_conf = get_data_config()
 
@@ -144,7 +145,8 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # ==========================================
     # 🛡️ 防火墙 1 & 2：时间旅行纠正与盘中拦截
     # ==========================================
-    now = datetime.now()
+    tz_shanghai = pytz.timezone('Asia/Shanghai')
+    now = datetime.now(tz_shanghai)
     today_dt = pd.to_datetime(now.strftime('%Y-%m-%d'))
 
     req_start_dt = pd.to_datetime(start_date)
@@ -252,10 +254,12 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
         if not newer_df.empty:
             local_df = pd.concat([local_df, newer_df])
             needs_update = True
-
-        # 💡 核心逻辑：因为我们有防火墙 1&2，这里的 req_end_dt 绝对是安全且已收盘的日期。
-        # 如果 newer_df 是空，只说明这两天是周末或节假日，我们理直气壮地把台账往后推！
-        meta['end'] = req_end_dt.strftime("%Y-%m-%d")
+            # 🚀 修复点 1：只有真正拿到数据，才把台账更新为拿到的最新数据的日期！
+            meta['end'] = newer_df.index.max().strftime("%Y-%m-%d")
+        else:
+            # 🚀 修复点 2：拿不到数据说明可能是节假日，也可能是数据源延迟。
+            # 我们绝对不能“理直气壮地把台账往后推”，而是保持 meta['end'] 不变，明天继续尝试拉取！
+            print(f"⚠️ 未获取到 {fetch_start} 之后的数据，暂不推进台账日期。")
 
     # ==========================================
     # 💾 数据落盘与切片返回
