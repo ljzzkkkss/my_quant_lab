@@ -43,9 +43,12 @@ def main():
             st.rerun()
 
         st.divider()
-        st.header("⚙️ 全局设置")
         if st.button("🔄 强制更新股票代码库", use_container_width=True, key="btn_update"):
-            if os.path.exists(data_conf.STOCK_LIST_CACHE): os.remove(data_conf.STOCK_LIST_CACHE)
+            # 🚀 放在不受缓存影响的 UI 视图层绝对安全！
+            st.toast("正在云端同步全市场 5000+ A股与 ETF，请稍候...", icon="🔄")
+
+            if os.path.exists(data_conf.STOCK_LIST_CACHE):
+                os.remove(data_conf.STOCK_LIST_CACHE)
             st.cache_data.clear()
             st.rerun()
 
