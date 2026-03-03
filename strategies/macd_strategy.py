@@ -18,9 +18,9 @@ filter_conf = get_filter_config()
 
 def apply_macd_strategy(
     df: pd.DataFrame,
-    fast_period: int = filter_conf.MACD_FAST,
-    slow_period: int = filter_conf.MACD_SLOW,
-    signal_period: int = filter_conf.MACD_SIGNAL
+    fast_period: int = None,
+    slow_period: int = None,
+    signal_period: int = None
 ) -> pd.DataFrame:
     """
     MACD 趋势波段策略
@@ -35,6 +35,9 @@ def apply_macd_strategy(
         包含 signal 和 position_diff 列的 DataFrame
     """
     df = df.copy()
+    fast_period = fast_period or filter_conf.MACD_FAST
+    slow_period = slow_period or filter_conf.MACD_SLOW
+    signal_period = signal_period or filter_conf.MACD_SIGNAL
 
     # 1. 计算 MACD
     ema_fast = df['收盘'].ewm(span=fast_period, adjust=False).mean()
@@ -69,14 +72,14 @@ class MACDStrategy(Strategy):
 
     def __init__(
         self,
-        fast_period: int = filter_conf.MACD_FAST,
-        slow_period: int = filter_conf.MACD_SLOW,
-        signal_period: int = filter_conf.MACD_SIGNAL
+        fast_period: int = None,
+        slow_period: int = None,
+        signal_period: int = None
     ):
         super().__init__()
-        self.fast_period = fast_period
-        self.slow_period = slow_period
-        self.signal_period = signal_period
+        self.fast_period = fast_period or filter_conf.MACD_FAST
+        self.slow_period = slow_period or filter_conf.MACD_SLOW
+        self.signal_period = signal_period or filter_conf.MACD_SIGNAL
 
         # 注册参数
         self.register_param(

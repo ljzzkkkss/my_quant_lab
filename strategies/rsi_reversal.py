@@ -36,9 +36,8 @@ def apply_rsi_strategy(
 
     # 1. 计算 RSI
     delta = df['收盘'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
-
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1 / rsi_period, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1 / rsi_period, adjust=False).mean()
     # 避免除零
     rs = gain / loss.replace(0, np.nan)
     df['rsi_line'] = 100 - (100 / (1 + rs))

@@ -81,6 +81,9 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
 
                 st.divider()
                 st.subheader("🎯 明日实战执行建议")
+                if bt_results is None or bt_results.empty:
+                    st.warning("⚠️ 回测期间内未产生任何有效交易信号或数据不足。")
+                    return
                 last_day = bt_results.iloc[-1]
                 last_date_str = last_day.name.strftime('%Y-%m-%d')
 

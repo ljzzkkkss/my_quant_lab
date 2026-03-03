@@ -18,9 +18,9 @@ def apply_advanced_filters(df, index_df, params):
 
     # 2. 相对强度：RSI
     delta = df['收盘'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(filter_conf.RSI_PERIOD).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(filter_conf.RSI_PERIOD).mean()
-    rs = gain / loss
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1 / filter_conf.RSI_PERIOD, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1 / filter_conf.RSI_PERIOD, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
     df['rsi'] = 100 - (100 / (1 + rs))
 
     # 3. 趋势斜率：计算MA20的斜率 (使用变动率近似)

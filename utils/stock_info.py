@@ -14,8 +14,7 @@ CACHE_TTL = data_conf.CACHE_TTL_DAYS * 86400  # 天数转秒数
 
 @st.cache_data
 def get_a_share_list():
-    if not os.path.exists(CACHE_DIR):
-        os.makedirs(CACHE_DIR)
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
     # 1. 读取本地缓存
     if os.path.exists(CACHE_FILE):

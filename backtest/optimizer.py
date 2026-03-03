@@ -26,7 +26,7 @@ def apply_advanced_filters(df: pd.DataFrame, index_df: Optional[pd.DataFrame], f
     delta = df['收盘'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(filter_conf.RSI_PERIOD).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(filter_conf.RSI_PERIOD).mean()
-    rs = gain / loss
+    rs = gain / loss.replace(0, np.nan)
     df['rsi'] = 100 - (100 / (1 + rs))
 
     df['vol_ma'] = df['成交量'].rolling(filter_conf.VOL_MA_PERIOD).mean()

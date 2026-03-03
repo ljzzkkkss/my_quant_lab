@@ -41,8 +41,9 @@ class TradingConfig:
 
 @dataclass
 class DataConfig:
-    CACHE_DIR: str = os.getenv("CACHE_DIR", "data/cache")
-    STOCK_LIST_CACHE: str = os.getenv("STOCK_LIST_CACHE", "data/cache/stock_list_cache.csv")
+    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    CACHE_DIR: str = os.getenv("CACHE_DIR", os.path.join(BASE_DIR, "data", "cache"))
+    STOCK_LIST_CACHE: str = os.getenv("STOCK_LIST_CACHE", os.path.join(CACHE_DIR, "stock_list_cache.csv"))
     CACHE_TTL_DAYS: int = 7
     DEFAULT_SOURCE: str = "baostock"
     DATA_REFRESH_HOUR: int = 15

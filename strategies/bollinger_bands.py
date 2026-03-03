@@ -46,7 +46,7 @@ def apply_bollinger_strategy(
     strat_df.loc[strat_df['收盘'] <= strat_df['MA'], 'signal_state'] = 0.0
 
     # 3. 信号延续
-    strat_df['signal'] = strat_df['signal_state']
+    strat_df['signal'] = strat_df['signal_state'].ffill().fillna(0)
 
     # 4. 计算仓位变化
     strat_df['position_diff'] = strat_df['signal'].diff()
