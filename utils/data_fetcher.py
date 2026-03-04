@@ -225,7 +225,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # ==========================================
     os.makedirs(cache_dir, exist_ok=True)
 
-    file_path = os.path.join(cache_dir, f"{symbol}.csv")
+    file_path = os.path.join(cache_dir, f"{symbol}.parquet")
     meta_path = os.path.join(cache_dir, f"{symbol}_meta.json")
 
     meta = {"start": "2099-01-01", "end": "1970-01-01"}
@@ -239,9 +239,10 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     local_df = pd.DataFrame()
     if os.path.exists(file_path):
         try:
-            local_df = pd.read_csv(file_path, index_col='日期', parse_dates=True)
-        except Exception:
-            pass  # 防止 CSV 损坏
+            # Parquet 天然支持保留索引和日期类型，读取极其迅速
+            local_df = pd.read_parquet(file_path, engine='pyarrow')
+        except Exception as e:
+            logger.warning(f"读取 Parquet 缓存失败，可能文件损坏: {e}")
 
     # ==========================================
     # 🌐 场景 A：首次拉取
@@ -265,7 +266,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
         with open(meta_path, 'w', encoding='utf-8') as f:
             json.dump(meta, f)
 
-        local_df.to_csv(file_path, encoding='utf-8-sig')
+        local_df.to_parquet(file_path, engine='pyarrow')
         print(f"✅ 首次拉取成功，建立台账：{meta_path}")
 
         mask = (local_df.index >= req_start_dt) & (local_df.index <= req_end_dt)
@@ -320,7 +321,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     # ==========================================
     if needs_update and not local_df.empty:
         local_df = local_df[~local_df.index.duplicated(keep='last')].sort_index()
-        local_df.to_csv(file_path, encoding='utf-8-sig')
+        local_df.to_parquet(file_path, engine='pyarrow')
 
     # 只要台账日期有推进，就更新 JSON
     with open(meta_path, 'w', encoding='utf-8') as f:

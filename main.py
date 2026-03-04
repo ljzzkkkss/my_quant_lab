@@ -1,21 +1,20 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import os
-from configs.settings import get_data_config
 from utils.logger import logger
 from utils.workspace import save_workspace, load_workspace
-
-data_conf = get_data_config()
-
 from utils.stock_info import get_a_share_list_display as get_all_stock_list
 from views.tab_manual import render_manual_tab
 from views.tab_auto import render_auto_tab
 from views.tab_batch import render_batch_tab
 from views.tab_portfolio import render_portfolio_tab
-from configs.settings import get_ui_config
+from configs.settings import get_ui_config,get_data_config,get_filter_config
 from strategies.base import StrategyRegistry
 
 ui_conf = get_ui_config()
+data_conf = get_data_config()
+filter_conf = get_filter_config()
+
 st.set_page_config(page_title=ui_conf.PAGE_TITLE, page_icon=ui_conf.PAGE_ICON, layout=ui_conf.LAYOUT_MODE)
 
 logger.info("💻 Web UI 界面开始渲染...")
@@ -102,11 +101,57 @@ def main():
             index_ma_period = st.number_input("大盘均线过滤周期", min_value=5, max_value=250, value=20, step=5, key="ni_idx_ma")
         else:
             index_ma_period = 20
-
+        use_sector = st.toggle("🎯 开启板块共振过滤", value=False, key="tg_sector")
+        if use_sector:
+            sector_code = st.text_input("输入代表性行业 ETF 代码 (如 512760 半导体)", value="512760", key="ti_sec_code")
+            sector_ma_period = st.number_input("板块均线过滤周期", min_value=5, max_value=250, value=20, step=5,
+                                               key="ni_sec_ma")
+        else:
+            sector_code = ""
+            sector_ma_period = 20
         vol_ratio = st.slider("成交量放大倍数 (量比)", 0.0, 3.0, 0.0, 0.1, key="sl_vol")
         rsi_limit = st.slider("RSI 超买拦截阈值", 50, 95, 90, key="sl_rsi")
         slope_min = st.slider("趋势最小向上斜率", -0.5, 1.0, -0.2, 0.1, key="sl_slope")
 
+        st.divider()
+        st.header("🧠 AI 机器学习引擎 (Meta-Labeling)")
+        with st.expander("ℹ️ 使用说明与 ETF 探针建议", expanded=False):
+            st.markdown("""
+            **🎯 核心原理与影响**
+            这是一个**“一票否决”**防骗线系统。当传统策略（如 MACD 金叉）发出版买入信号时，AI 会回顾该股历史表现，结合当前的宏观/地缘环境，预测本次买入未来 5 天赚钱的概率。
+            * **影响**：交易频次会大幅下降（滤除杂波），但**胜率和抗回撤能力将发生质的飞跃**。
+
+            **🛠️ 如何使用**
+            1. 开启下方开关，设定“最低胜率放行阈值”（震荡市建议调高至 55%-60%）。
+            2. 可选：勾选外部探针。AI 会自动提取这些 ETF 的动能和波动率作为额外“特征”进行学习。
+
+            **📡 探针 ETF 代码推荐库**
+            * **🌍 宏观情绪探针** (感知风险与流动性)
+                * `518880` (黄金 ETF) - 避险情绪、通胀预期 (默认推荐)
+                * `513500` (标普 500) - 外部环境与外资风险偏好
+                * `511010` (国债 ETF) - 国内市场流动性宽裕度
+            * **🔥 地缘恐慌探针** (感知冲突与博弈)
+                * `512710` (原油 ETF) - 中东局势、全球能源危机 (默认推荐)
+                * `512670` (军工 ETF) - 区域摩擦、中美科技/军工博弈
+            """)
+        use_ml = st.toggle("🤖 开启智能胜率预测拦截", value=False, key="tg_ml",
+                           help="系统将根据个股历史股性，使用逻辑回归动态预测该买点未来5天上涨概率。概率过低则强行拦截信号。")
+        if use_ml:
+            ml_threshold = st.slider("最低胜率放行阈值 (%)", 30, 80, 50, step=5, key="sl_ml_th") / 100.0
+            st.markdown("**(可选) 外部因子探针**")
+            use_macro = st.checkbox("🌍 宏观情绪探针 (默认:黄金)", value=False, key="chk_macro")
+            macro_code = st.text_input("宏观 ETF 代码", value=getattr(filter_conf, 'DEFAULT_MACRO_ETF', '518880'),
+                                       key="ti_macro") if use_macro else ""
+
+            use_geo = st.checkbox("🔥 地缘恐慌探针 (默认:原油)", value=False, key="chk_geo")
+            geo_code = st.text_input("地缘 ETF 代码", value=getattr(filter_conf, 'DEFAULT_GEO_ETF', '512710'),
+                                     key="ti_geo") if use_geo else ""
+        else:
+            ml_threshold = 0.50
+            use_macro = False
+            macro_code = ""
+            use_geo = False
+            geo_code = ""
         st.divider()
         st.header("⚖️ 交易成本与环境配置")
         with st.expander("🛠️ 自定义手续费与滑点", expanded=False):
@@ -118,10 +163,14 @@ def main():
 
         global_filters = {
             'use_index': use_index, 'index_ma_period': index_ma_period,
+            'use_sector': use_sector, 'sector_code': sector_code, 'sector_ma_period': sector_ma_period,
             'vol_ratio': vol_ratio, 'rsi_limit': rsi_limit, 'slope_min': slope_min,
+            'use_ml_filter': use_ml, 'ml_threshold': ml_threshold,
+            'use_macro': use_macro, 'macro_code': macro_code,  # 🚀 打包宏观参数
+            'use_geo': use_geo, 'geo_code': geo_code,
             'tp': global_tp, 'sl': global_sl,
             'use_trailing': use_trailing, 'trail_act': trail_act, 'trail_rate': trail_rate,
-            'buy_fee': buy_fee, 'sell_fee': sell_fee,'min_comm': min_comm,
+            'buy_fee': buy_fee, 'sell_fee': sell_fee, 'min_comm': min_comm,
             'slippage': slippage, 'min_shares': int(min_shares)
         }
 

@@ -24,6 +24,10 @@ class FilterConfig:
     MACD_FAST: int = 12
     MACD_SLOW: int = 26
     MACD_SIGNAL: int = 9
+    # 宏观情绪探针 (默认: 黄金 ETF)
+    DEFAULT_MACRO_ETF: str = "518880"
+    # 地缘恐慌探针 (默认: 原油 ETF)
+    DEFAULT_GEO_ETF: str = "512710"
 
 @dataclass
 class TradingConfig:

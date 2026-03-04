@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
 from backtest.engine import run_backtest, plot_equity_curve
-from backtest.optimizer import apply_advanced_filters
+from strategies.advanced_filter import apply_advanced_filters
 from components.charts import plot_interactive_kline
 from configs.settings import get_backtest_config
 from strategies.base import StrategyRegistry
@@ -125,9 +125,26 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                     # 调用底层接口，直接传入组装好的参数字典
                     strat_df = strategy.generate_signals(raw_data, **param_values)
 
-                    # ========= 以下逻辑保持完全不变 =========
-                    index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters[
-                        'use_index'] else None
+                    index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters['use_index'] else None
+
+                    # ... 提取板块数据 ...
+                    sector_data = get_daily_hfq_data(global_filters['sector_code'], start_date,
+                                                     end_date) if global_filters.get(
+                        'use_sector') and global_filters.get('sector_code') else None
+                    global_filters['sector_df'] = sector_data
+
+                    # 🚀 提取并注入宏观探针数据
+                    macro_data = get_daily_hfq_data(global_filters['macro_code'], start_date,
+                                                    end_date) if global_filters.get('use_macro') and global_filters.get(
+                        'macro_code') else None
+                    global_filters['macro_df'] = macro_data
+
+                    # 🚀 提取并注入地缘探针数据
+                    geo_data = get_daily_hfq_data(global_filters['geo_code'], start_date,
+                                                  end_date) if global_filters.get('use_geo') and global_filters.get(
+                        'geo_code') else None
+                    global_filters['geo_df'] = geo_data
+
                     strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
 
                     strat_df['final_signal'] = np.where(strat_df['filter_pass'], strat_df['signal'], 0)

@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from utils.data_fetcher import get_daily_hfq_data
 from backtest.optimizer import optimize_strategy
 from strategies.base import StrategyRegistry
 from utils.data_context import DataContext
@@ -95,8 +94,16 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
 
             # 🚀 核武器：构建全局数据中心
             ctx = DataContext()
-            ctx.preload(selected_stocks, start_date, end_date, global_filters.get('use_index'))
+            ctx.preload(selected_stocks, start_date, end_date, global_filters.get('use_index'),
+                        use_sector=global_filters.get('use_sector', False),
+                        sector_code=global_filters.get('sector_code', ''),
+                        use_macro=global_filters.get('use_macro', False),
+                        macro_code=global_filters.get('macro_code', ''),
+                        use_geo=global_filters.get('use_geo', False), geo_code=global_filters.get('geo_code', ''))
 
+            global_filters['sector_df'] = getattr(ctx, 'sector_data', None)
+            global_filters['macro_df'] = getattr(ctx, 'macro_data', None)
+            global_filters['geo_df'] = getattr(ctx, 'geo_data', None)
             for i, disp in enumerate(selected_stocks):
                 sym = disp.split('(')[-1].replace(')', '').strip()
                 name = disp.split(' (')[0]
@@ -107,7 +114,7 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                     res_df, desc_map = optimize_strategy(
                         raw, strategy_type, initial_capital, global_filters, pos_ratio,
                         opt_keys, grid_values, start_date, end_date,
-                        preloaded_index=ctx.index_data  # 🚀 直接把内存大盘数据穿透传给引擎
+                        preloaded_index=ctx.index_data
                     )
 
                     if res_df is not None and not res_df.empty:

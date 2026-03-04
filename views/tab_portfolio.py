@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from backtest.optimizer import apply_advanced_filters
+from strategies.advanced_filter import apply_advanced_filters
 from backtest.engine import run_portfolio_backtest
 from utils.data_context import DataContext
 from strategies.base import StrategyRegistry
@@ -94,7 +94,12 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
 
             # 🚀 核武器：构建全局数据中心，一波全拉到内存！
             ctx = DataContext()
-            ctx.preload(selected_pool, start_date, end_date, global_filters.get('use_index'))
+            ctx.preload(selected_pool, start_date, end_date, global_filters.get('use_index'),
+                        use_sector=global_filters.get('use_sector', False),
+                        sector_code=global_filters.get('sector_code', ''),
+                        use_macro=global_filters.get('use_macro', False),
+                        macro_code=global_filters.get('macro_code', ''),
+                        use_geo=global_filters.get('use_geo', False), geo_code=global_filters.get('geo_code', ''))
 
             for i, disp in enumerate(selected_pool):
                 sym = disp.split('(')[-1].replace(')', '').strip()
@@ -106,6 +111,10 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
 
                 df = strategy.generate_signals(raw, **param_values)
                 # 传入内存大盘数据
+                global_filters['sector_df'] = ctx.sector_data
+                global_filters['macro_df'] = ctx.macro_data
+                global_filters['geo_df'] = ctx.geo_data
+
                 df = apply_advanced_filters(df, ctx.index_data, global_filters)
 
                 df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)

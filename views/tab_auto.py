@@ -4,7 +4,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 from utils.data_fetcher import get_daily_hfq_data
-from backtest.optimizer import optimize_strategy, apply_advanced_filters
+from backtest.optimizer import optimize_strategy
+from strategies.advanced_filter import apply_advanced_filters
 from backtest.engine import run_backtest, plot_equity_curve
 from strategies.base import StrategyRegistry
 from configs.settings import get_backtest_config
@@ -19,6 +20,22 @@ def run_single_param_backtest(raw_data, strategy_type, param_dict, global_filter
 
     index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, raw_data.index[0].strftime('%Y%m%d'),
                                     raw_data.index[-1].strftime('%Y%m%d')) if global_filters.get('use_index') else None
+
+    # ... 提取板块数据 ...
+    sector_data = get_daily_hfq_data(global_filters['sector_code'], raw_data.index[0].strftime('%Y%m%d'), raw_data.index[-1].strftime('%Y%m%d')) if global_filters.get(
+        'use_sector') and global_filters.get('sector_code') else None
+    global_filters['sector_df'] = sector_data
+
+    # 🚀 提取并注入宏观探针数据
+    macro_data = get_daily_hfq_data(global_filters['macro_code'], raw_data.index[0].strftime('%Y%m%d'), raw_data.index[-1].strftime('%Y%m%d')) if global_filters.get(
+        'use_macro') and global_filters.get('macro_code') else None
+    global_filters['macro_df'] = macro_data
+
+    # 🚀 提取并注入地缘探针数据
+    geo_data = get_daily_hfq_data(global_filters['geo_code'], raw_data.index[0].strftime('%Y%m%d'), raw_data.index[-1].strftime('%Y%m%d')) if global_filters.get(
+        'use_geo') and global_filters.get('geo_code') else None
+    global_filters['geo_df'] = geo_data
+
     strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
 
     if 'position_diff' not in strat_df.columns:

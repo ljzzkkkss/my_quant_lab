@@ -8,48 +8,16 @@ from multiprocessing import cpu_count
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import warnings
-import itertools
 
 from backtest.engine import run_backtest
-from configs.settings import get_trading_config, get_backtest_config, get_filter_config
-
-# 🚀 核心引入：注册表
+from configs.settings import get_trading_config, get_backtest_config
 from strategies.base import StrategyRegistry
+
+# 🚀 斩草除根：删除了本地冗余的过滤器代码，统一从外部引入唯一的“单点真相”
+from strategies.advanced_filter import apply_advanced_filters
 
 bt_conf = get_backtest_config()
 trade_conf = get_trading_config()
-
-def apply_advanced_filters(df: pd.DataFrame, index_df: Optional[pd.DataFrame], filters: Dict) -> pd.DataFrame:
-    """应用高级过滤条件 (动态读取周期配置)"""
-    filter_conf = get_filter_config()
-
-    delta = df['收盘'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(filter_conf.RSI_PERIOD).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(filter_conf.RSI_PERIOD).mean()
-    rs = gain / loss.replace(0, np.nan)
-    df['rsi'] = 100 - (100 / (1 + rs))
-
-    df['vol_ma'] = df['成交量'].rolling(filter_conf.VOL_MA_PERIOD).mean()
-    df['volume_ratio'] = df['成交量'] / df['vol_ma'].shift(1)
-
-    ma_slope = df['收盘'].rolling(filter_conf.MA_SLOPE_PERIOD).mean()
-    df['slope'] = (ma_slope - ma_slope.shift(filter_conf.MA_SLOPE_SHIFT)) / ma_slope.shift(filter_conf.MA_SLOPE_SHIFT) * 100
-
-    df['index_ok'] = True
-    if filters.get('use_index') and index_df is not None:
-        # 🚀 读取前端设定的周期
-        idx_period = filters.get('index_ma_period', filter_conf.INDEX_MA_PERIOD)
-        idx_ma = index_df['收盘'].rolling(idx_period).mean()
-        # 🚀 核心修复Bug
-        df['index_ok'] = (index_df['收盘'] > idx_ma).reindex(df.index, method='ffill').fillna(False)
-
-    df['filter_pass'] = (
-            (df['volume_ratio'] >= filters.get('vol_ratio', 0)) &
-            (df['rsi'] <= filters.get('rsi_limit', 100)) &
-            (df['slope'] >= filters.get('slope_min', -999)) &
-            (df['index_ok'] == True)
-    )
-    return df
 
 def _evaluate_single_param(
         param_dict: Dict[str, Any],
@@ -62,17 +30,20 @@ def _evaluate_single_param(
 ) -> Dict[str, Any]:
     warnings.filterwarnings('ignore')
     try:
-        # 🚀 1. 动态获取策略实例
+        # 1. 动态获取策略实例
         strategy = StrategyRegistry.get(strategy_type)
         if not strategy: return None
 
-        # 🚀 2. 动态生成信号，彻底干掉 if/elif
+        # 2. 动态生成信号
         strat_df = strategy.generate_signals(raw_data, **param_dict)
+
+        # 🚀 3. 极其干净的过滤调用：宏观/地缘/板块数据已经全部在 global_filters 字典中！
         strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
 
         if 'position_diff' not in strat_df.columns:
             strat_df['position_diff'] = strat_df['signal'].diff().fillna(0)
 
+        # 结合过滤器放行状态生成最终买卖点
         strat_df['valid_buy'] = (strat_df['position_diff'] == 1) & strat_df['filter_pass']
         strat_df['valid_sell'] = (strat_df['position_diff'] == -1)
 
@@ -82,6 +53,7 @@ def _evaluate_single_param(
         strat_df['final_signal'] = strat_df['action'].ffill().fillna(0)
         strat_df['position_diff'] = strat_df['final_signal'].diff().fillna(0)
 
+        # 撮合回测
         bt_results = run_backtest(strat_df, initial_capital, position_ratio, global_filters)
 
         # 动态拼接结果字典
@@ -95,7 +67,8 @@ def _evaluate_single_param(
             '交易次数': bt_results.attrs.get('trade_count', 0)
         })
         return res
-    except Exception:
+    except Exception as e:
+        # 此处可按需记录日志
         return None
 
 
@@ -114,10 +87,12 @@ def optimize_strategy(
     if preloaded_index is not None:
         index_data = preloaded_index
     else:
-        index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get(
-            'use_index') else None
+        index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get('use_index') else None
 
-    # 🚀 真正的 N 维网格笛卡尔积
+    # 🚀 注意：前端在调起这个函数前，已经将 sector_df, macro_df, geo_df 塞入了 global_filters 字典中。
+    # 它们会被底层的 ProcessPoolExecutor 自动封包，序列化后直接发射给所有并发子进程，无需再改动参数列表！
+
+    # 真正的 N 维网格笛卡尔积
     combinations = list(itertools.product(*param_grid_values))
 
     # 获取参数的中文描述映射
@@ -127,13 +102,10 @@ def optimize_strategy(
     valid_combinations = []
     for combo in combinations:
         p_dict = {param_grid_keys[i]: val for i, val in enumerate(combo)}
-        # 基础的冲突过滤启发式（防止无意义计算）
-        if 'short_window' in p_dict and 'long_window' in p_dict and p_dict['short_window'] >= p_dict[
-            'long_window']: continue
-        if 'fast_period' in p_dict and 'slow_period' in p_dict and p_dict['fast_period'] >= p_dict[
-            'slow_period']: continue
-        if 'lower_bound' in p_dict and 'upper_bound' in p_dict and p_dict['lower_bound'] >= p_dict[
-            'upper_bound']: continue
+        # 基础的冲突过滤启发式（防止无意义计算浪费 CPU）
+        if 'short_window' in p_dict and 'long_window' in p_dict and p_dict['short_window'] >= p_dict['long_window']: continue
+        if 'fast_period' in p_dict and 'slow_period' in p_dict and p_dict['fast_period'] >= p_dict['slow_period']: continue
+        if 'lower_bound' in p_dict and 'upper_bound' in p_dict and p_dict['lower_bound'] >= p_dict['upper_bound']: continue
 
         valid_combinations.append(p_dict)
 
