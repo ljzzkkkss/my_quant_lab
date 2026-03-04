@@ -9,6 +9,7 @@ import time
 import pandas as pd
 import streamlit as st
 import baostock as bs
+import akshare as ak
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
@@ -129,6 +130,59 @@ def fetch_from_baostock(symbol: str, start_date, end_date, max_retries: int = 3)
     return pd.DataFrame()
 
 
+def fetch_from_akshare(symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    """尝试使用 AkShare 获取前复权数据"""
+    try:
+        # Akshare 需要纯数字代码，例如 '600519'，而不用带 'sh.' 或 'sz.'
+        clean_symbol = symbol.split('.')[-1] if '.' in symbol else symbol
+
+        # 调用 AkShare 的东方财富 A 股历史行情接口 (自带前复权)
+        df = ak.stock_zh_a_hist(
+            symbol=clean_symbol,
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="qfq"
+        )
+
+        if df is None or df.empty:
+            return None
+
+        # 标准化列名和索引，与 Baostock 格式保持一致
+        if '日期' in df.columns:
+            df['日期'] = pd.to_datetime(df['日期'])
+            df.set_index('日期', inplace=True)
+
+        cols_to_keep = ['开盘', '收盘', '最高', '最低', '成交量']
+
+        # 容错：确保拿到的数据包含必须的列
+        if not all(col in df.columns for col in cols_to_keep):
+            return None
+
+        df = df[cols_to_keep]
+        # 强转数值型，防止部分接口返回字符串
+        df[cols_to_keep] = df[cols_to_keep].apply(pd.to_numeric, errors='coerce')
+
+        return df
+    except Exception as e:
+        logger.warning(f"⚠️ AkShare 获取 {symbol} 失败: {e}")
+        return None
+
+
+def fetch_data_with_fallback(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """容灾双通道：优先 AkShare，失败则回退 Baostock"""
+    # 尝试主引擎
+    print(f"⚡ 尝试主引擎 (AkShare) 拉取 {symbol}: {start_date}-{end_date}...")
+    df = fetch_from_akshare(symbol, start_date, end_date)
+
+    if df is not None and not df.empty:
+        print(f"✅ 主引擎 (AkShare) 获取成功！")
+        return df
+
+    # 主引擎失败，启动备用引擎
+    print(f"♻️ 主引擎无数据或超时，启动备用引擎 (Baostock)...")
+    return fetch_from_baostock(symbol, start_date, end_date)
+
 def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: str = data_conf.CACHE_DIR) -> Optional[pd.DataFrame]:
     """
     获取前复权数据（带缓存）
@@ -198,7 +252,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
         except:
             pass
         print(f"🌐 未发现 {symbol} 的本地数据库，执行首次拉取...")
-        local_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), req_end_dt.strftime('%Y%m%d'))
+        local_df = fetch_data_with_fallback(symbol, req_start_dt.strftime('%Y%m%d'), req_end_dt.strftime('%Y%m%d'))
 
         # 🚨 防火墙 3：如果首次拉取彻底没数据（断网或退市），绝对不要生成空台账，直接抛弃！
         if local_df is None or local_df.empty:
@@ -232,7 +286,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
         except:
             pass
         print(f"🌐 增量补齐历史：{req_start_dt.strftime('%Y%m%d')} 至 {fetch_end}...")
-        older_df = fetch_from_baostock(symbol, req_start_dt.strftime('%Y%m%d'), fetch_end)
+        older_df = fetch_data_with_fallback(symbol, req_start_dt.strftime('%Y%m%d'), fetch_end)
 
         if not older_df.empty:
             local_df = pd.concat([older_df, local_df])
@@ -249,7 +303,7 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
         except:
             pass
         print(f"🌐 增量同步最新：{fetch_start} 至 {req_end_dt.strftime('%Y%m%d')}...")
-        newer_df = fetch_from_baostock(symbol, fetch_start, req_end_dt.strftime('%Y%m%d'))
+        newer_df = fetch_data_with_fallback(symbol, fetch_start, req_end_dt.strftime('%Y%m%d'))
 
         if not newer_df.empty:
             local_df = pd.concat([local_df, newer_df])

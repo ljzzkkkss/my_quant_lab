@@ -54,7 +54,7 @@ class DataConfig:
     STOCK_LIST_CACHE: str = os.getenv("STOCK_LIST_CACHE", os.path.join(CACHE_DIR, "stock_list_cache.csv"))
     CACHE_TTL_DAYS: int = 7
     DEFAULT_SOURCE: str = "baostock"
-    DATA_REFRESH_HOUR: int = 17
+    DATA_REFRESH_HOUR: int = 15
     DATA_REFRESH_MINUTE: int = 30
 
 @dataclass
