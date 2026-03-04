@@ -20,6 +20,7 @@ def run_single_param_backtest(raw_data, strategy_type, param_dict, global_filter
 
     index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, raw_data.index[0].strftime('%Y%m%d'),
                                     raw_data.index[-1].strftime('%Y%m%d')) if global_filters.get('use_index') else None
+    global_filters['index_df'] = index_data
 
     # ... 提取板块数据 ...
     sector_data = get_daily_hfq_data(global_filters['sector_code'], raw_data.index[0].strftime('%Y%m%d'), raw_data.index[-1].strftime('%Y%m%d')) if global_filters.get(

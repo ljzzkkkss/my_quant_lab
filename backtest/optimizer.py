@@ -3,12 +3,12 @@
 """
 import pandas as pd
 import numpy as np
+import warnings
+import itertools
 from typing import Dict, List, Tuple, Any, Optional, Callable
 from multiprocessing import cpu_count
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import warnings
-
 from backtest.engine import run_backtest
 from configs.settings import get_trading_config, get_backtest_config
 from strategies.base import StrategyRegistry
@@ -23,7 +23,6 @@ def _evaluate_single_param(
         param_dict: Dict[str, Any],
         strategy_type: str,
         raw_data: pd.DataFrame,
-        index_data: Optional[pd.DataFrame],
         global_filters: Dict,
         initial_capital: float,
         position_ratio: float
@@ -38,7 +37,7 @@ def _evaluate_single_param(
         strat_df = strategy.generate_signals(raw_data, **param_dict)
 
         # 🚀 3. 极其干净的过滤调用：宏观/地缘/板块数据已经全部在 global_filters 字典中！
-        strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
+        strat_df = apply_advanced_filters(strat_df, global_filters)
 
         if 'position_diff' not in strat_df.columns:
             strat_df['position_diff'] = strat_df['signal'].diff().fillna(0)
@@ -78,16 +77,8 @@ def optimize_strategy(
         param_grid_keys: List[str], param_grid_values: List[List[Any]],
         start_date: str, end_date: str,
         use_parallel: bool = True, max_workers: Optional[int] = None,
-        progress_callback: Optional[Callable[[float], None]] = None,
-        preloaded_index: Optional[pd.DataFrame] = None
+        progress_callback: Optional[Callable[[float], None]] = None
 ) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
-    from utils.data_fetcher import get_daily_hfq_data
-    import itertools
-
-    if preloaded_index is not None:
-        index_data = preloaded_index
-    else:
-        index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters.get('use_index') else None
 
     # 🚀 注意：前端在调起这个函数前，已经将 sector_df, macro_df, geo_df 塞入了 global_filters 字典中。
     # 它们会被底层的 ProcessPoolExecutor 自动封包，序列化后直接发射给所有并发子进程，无需再改动参数列表！
@@ -117,7 +108,7 @@ def optimize_strategy(
         num_workers = max_workers or (cpu_count() - 1) or 1
         eval_func = partial(
             _evaluate_single_param, strategy_type=strategy_type, raw_data=raw_data,
-            index_data=index_data, global_filters=global_filters,
+            global_filters=global_filters,
             initial_capital=initial_capital, position_ratio=position_ratio
         )
 
@@ -131,7 +122,7 @@ def optimize_strategy(
     else:
         total = len(valid_combinations)
         for i, p_dict in enumerate(valid_combinations):
-            result = _evaluate_single_param(p_dict, strategy_type, raw_data, index_data, global_filters,
+            result = _evaluate_single_param(p_dict, strategy_type, raw_data, global_filters,
                                             initial_capital, position_ratio)
             if result: results.append(result)
             if progress_callback: progress_callback((i + 1) / total)

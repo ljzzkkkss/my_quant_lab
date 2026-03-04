@@ -101,6 +101,7 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                         macro_code=global_filters.get('macro_code', ''),
                         use_geo=global_filters.get('use_geo', False), geo_code=global_filters.get('geo_code', ''))
 
+            global_filters['index_df'] = getattr(ctx, 'index_data', None)
             global_filters['sector_df'] = getattr(ctx, 'sector_data', None)
             global_filters['macro_df'] = getattr(ctx, 'macro_data', None)
             global_filters['geo_df'] = getattr(ctx, 'geo_data', None)

@@ -6,7 +6,7 @@ from sklearn.linear_model import LogisticRegression
 
 filter_conf = get_filter_config()
 warnings.filterwarnings("ignore", category=UserWarning) # 忽略模型训练的无害警告
-def apply_advanced_filters(df, index_df, params):
+def apply_advanced_filters(df, params):
     """
     params 包含:
     - vol_ratio (成交量放大倍数)
@@ -16,8 +16,9 @@ def apply_advanced_filters(df, index_df, params):
     - use_index (是否开启大盘过滤)
     - use_sector (是否开启板块/行业共振过滤)
     """
-    #从 params 字典中安全地提取板块数据
+    #从 params 字典中安全地提取大盘和板块数据
     sector_df = params.get('sector_df')
+    index_df = params.get('index_df')
     # 1. 基础指标：成交量放大倍数
     df['vol_ma'] = df['成交量'].rolling(filter_conf.VOL_MA_PERIOD).mean()
     df['volume_ratio'] = df['成交量'] / df['vol_ma'].shift(1)
@@ -44,11 +45,8 @@ def apply_advanced_filters(df, index_df, params):
     # 5. 大盘滤镜逻辑
     df['index_ok'] = True
     if params.get('use_index') and index_df is not None:
-        # 🚀 动态读取前端传来的均线周期
         idx_period = params.get('index_ma_period', filter_conf.INDEX_MA_PERIOD)
         index_ma = index_df['收盘'].rolling(idx_period).mean()
-
-        # 🚀 核心修复Bug：原来缺失了这一行，导致大盘择时结果没有被真正应用！
         df['index_ok'] = (index_df['收盘'] > index_ma).reindex(df.index, method='ffill').fillna(False)
 
     # 🚀 6. 新增：板块/行业共振过滤逻辑

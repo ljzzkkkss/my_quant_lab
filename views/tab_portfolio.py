@@ -111,6 +111,7 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
 
                 df = strategy.generate_signals(raw, **param_values)
                 # 传入内存大盘数据
+                global_filters['index_df'] = ctx.index_data
                 global_filters['sector_df'] = ctx.sector_data
                 global_filters['macro_df'] = ctx.macro_data
                 global_filters['geo_df'] = ctx.geo_data

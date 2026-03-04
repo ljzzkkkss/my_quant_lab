@@ -126,7 +126,7 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                     strat_df = strategy.generate_signals(raw_data, **param_values)
 
                     index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters['use_index'] else None
-
+                    global_filters['index_df'] = index_data
                     # ... 提取板块数据 ...
                     sector_data = get_daily_hfq_data(global_filters['sector_code'], start_date,
                                                      end_date) if global_filters.get(
