@@ -37,7 +37,7 @@ def run_single_param_backtest(raw_data, strategy_type, param_dict, global_filter
         'use_geo') and global_filters.get('geo_code') else None
     global_filters['geo_df'] = geo_data
 
-    strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
+    strat_df = apply_advanced_filters(strat_df, global_filters)
 
     if 'position_diff' not in strat_df.columns:
         strat_df['position_diff'] = strat_df['signal'].diff().fillna(0)

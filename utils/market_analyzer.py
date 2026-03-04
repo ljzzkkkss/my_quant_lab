@@ -113,7 +113,54 @@ class MarketAnalyzer:
         return patterns
 
     @staticmethod
-    def generate_diagnostic_report(df: pd.DataFrame) -> dict:
+    def analyze_external_env(env_filters: dict) -> dict:
+        """🌍 解析外部环境探针数据"""
+        env_res = {}
+        if not env_filters: return env_res
+
+        # 1. 板块共振分析
+        if env_filters.get('use_sector') and env_filters.get('sector_df') is not None:
+            sdf = env_filters['sector_df']
+            if len(sdf) >= 20:
+                ma20 = sdf['收盘'].rolling(20).mean().iloc[-1]
+                price = sdf['收盘'].iloc[-1]
+                if price > ma20:
+                    env_res['sector'] = {"status": "🌊 板块顺风", "desc": "行业处于多头趋势，具有上行共振动能",
+                                         "color": "#ff4b4b"}  # 红色
+                else:
+                    env_res['sector'] = {"status": "🚧 板块逆风", "desc": "行业处于空头趋势，个股上涨阻力较大",
+                                         "color": "#00b050"}  # 绿色
+
+        # 2. 宏观情绪分析 (黄金)
+        if env_filters.get('use_macro') and env_filters.get('macro_df') is not None:
+            mdf = env_filters['macro_df']
+            if len(mdf) >= 5:
+                ret5 = mdf['收盘'].pct_change(5).iloc[-1]
+                if ret5 > 0.015:
+                    env_res['macro'] = {"status": "🛡️ 避险升温", "desc": f"宏观探针近5日异动上涨 {ret5 * 100:.1f}%",
+                                        "color": "orange"}
+                elif ret5 < -0.015:
+                    env_res['macro'] = {"status": "💸 偏好修复", "desc": f"宏观探针近5日回落 {ret5 * 100:.1f}%",
+                                        "color": "gray"}
+                else:
+                    env_res['macro'] = {"status": "☕ 宏观平稳", "desc": "宏观探针近期无明显异动", "color": "gray"}
+
+        # 3. 地缘恐慌分析 (原油波动率)
+        if env_filters.get('use_geo') and env_filters.get('geo_df') is not None:
+            gdf = env_filters['geo_df']
+            if len(gdf) >= 5:
+                vol = gdf['收盘'].pct_change().rolling(5).std().iloc[-1]
+                if vol > 0.015:  # 针对 ETF 的波动率阈值
+                    env_res['geo'] = {"status": "🔥 地缘动荡",
+                                      "desc": f"地缘探针波动率放大至 {vol * 100:.1f}%，警惕突发事件", "color": "orange"}
+                else:
+                    env_res['geo'] = {"status": "🕊️ 局势平稳", "desc": "地缘探针近期波动率处于正常水平",
+                                      "color": "gray"}
+
+        return env_res
+
+    @staticmethod
+    def generate_diagnostic_report(df: pd.DataFrame, env_filters: dict = None) -> dict:
         if df is None or df.empty or len(df) < 60: return None
         current_price = df['收盘'].iloc[-1]
         sup, res = MarketAnalyzer.find_support_resistance(df)
@@ -125,9 +172,13 @@ class MarketAnalyzer:
         score = sum(
             [40 if current_price > ma20 else -40, 30 if current_price > ma60 else -30, 30 if ma20 > ma60 else -30])
 
+        # 🚀 新增：调用外部环境诊断
+        env_analysis = MarketAnalyzer.analyze_external_env(env_filters)
+
         return {
             "current_price": current_price, "support": sup, "resistance": res,
             "vp_status": vp_analysis["status"], "vp_desc": vp_analysis["desc"], "vp_color": vp_analysis["color"],
             "trend_score": score,
-            "patterns": patterns
+            "patterns": patterns,
+            "env_analysis": env_analysis  # 🚀 将外部环境诊断结果打包返回
         }

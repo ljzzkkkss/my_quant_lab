@@ -70,7 +70,32 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
         with ui_button_lock(btn_ph, "⏳ 引擎高速运转中...", "🚀 执行完整回测", "m_run"):
             with st.spinner('回测计算与盘口诊断中...'):
                 raw_data = get_daily_hfq_data(symbol, start_date, end_date)
-                diagnostic = MarketAnalyzer.generate_diagnostic_report(raw_data)
+                # ==========================================
+                # 🚀 1. 数据装载提前：在诊断前先拉取所有外部数据！
+                # ==========================================
+                index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters[
+                    'use_index'] else None
+                global_filters['index_df'] = index_data
+
+                sector_data = get_daily_hfq_data(global_filters['sector_code'], start_date,
+                                                 end_date) if global_filters.get('use_sector') and global_filters.get(
+                    'sector_code') else None
+                global_filters['sector_df'] = sector_data
+
+                macro_data = get_daily_hfq_data(global_filters['macro_code'], start_date,
+                                                end_date) if global_filters.get('use_macro') and global_filters.get(
+                    'macro_code') else None
+                global_filters['macro_df'] = macro_data
+
+                geo_data = get_daily_hfq_data(global_filters['geo_code'], start_date, end_date) if global_filters.get(
+                    'use_geo') and global_filters.get('geo_code') else None
+                global_filters['geo_df'] = geo_data
+
+                # ==========================================
+                # 生成包含外部因子的诊断报告
+                # ==========================================
+                # 将装满数据的 global_filters 传给分析引擎
+                diagnostic = MarketAnalyzer.generate_diagnostic_report(raw_data, global_filters)
 
                 if diagnostic:
                     st.divider()
@@ -103,6 +128,20 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                             down_space = 1 - (diagnostic['support'] / diagnostic['current_price'])
                             st.caption(
                                 f"当前盈亏空间比: **{up_space / down_space:.1f}** (向上{up_space * 100:.1f}% / 向下{down_space * 100:.1f}%)")
+
+                    st.markdown("#### 🌍 外部环境与宏观共振 (AI探针)")
+                    if diagnostic.get('env_analysis'):
+                        env_res = diagnostic['env_analysis']
+                        env_cols = st.columns(len(env_res) if len(env_res) > 0 else 1)
+                        for idx, (k, v) in enumerate(env_res.items()):
+                            with env_cols[idx]:
+                                st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px;'>"
+                                            f"<strong>{v['status']}</strong><br>"
+                                            f"<span style='font-size:0.85em; color:{v['color']};'>{v['desc']}</span>"
+                                            f"</div>", unsafe_allow_html=True)
+                    else:
+                        st.info("ℹ️ 未开启外部环境探针，系统当前仅依据个股量价进行诊断。")
+
                     st.markdown("#### 📡 异动形态雷达 (近期捕捉)")
                     if diagnostic['patterns']:
                         p_cols = st.columns(len(diagnostic['patterns']))
@@ -125,27 +164,7 @@ def render_manual_tab(symbol, start_date, end_date, initial_capital, global_filt
                     # 调用底层接口，直接传入组装好的参数字典
                     strat_df = strategy.generate_signals(raw_data, **param_values)
 
-                    index_data = get_daily_hfq_data(bt_conf.BENCHMARK_CODE, start_date, end_date) if global_filters['use_index'] else None
-                    global_filters['index_df'] = index_data
-                    # ... 提取板块数据 ...
-                    sector_data = get_daily_hfq_data(global_filters['sector_code'], start_date,
-                                                     end_date) if global_filters.get(
-                        'use_sector') and global_filters.get('sector_code') else None
-                    global_filters['sector_df'] = sector_data
-
-                    # 🚀 提取并注入宏观探针数据
-                    macro_data = get_daily_hfq_data(global_filters['macro_code'], start_date,
-                                                    end_date) if global_filters.get('use_macro') and global_filters.get(
-                        'macro_code') else None
-                    global_filters['macro_df'] = macro_data
-
-                    # 🚀 提取并注入地缘探针数据
-                    geo_data = get_daily_hfq_data(global_filters['geo_code'], start_date,
-                                                  end_date) if global_filters.get('use_geo') and global_filters.get(
-                        'geo_code') else None
-                    global_filters['geo_df'] = geo_data
-
-                    strat_df = apply_advanced_filters(strat_df, index_data, global_filters)
+                    strat_df = apply_advanced_filters(strat_df, global_filters)
 
                     strat_df['final_signal'] = np.where(strat_df['filter_pass'], strat_df['signal'], 0)
                     strat_df['position_diff'] = strat_df['final_signal'].diff().fillna(0)

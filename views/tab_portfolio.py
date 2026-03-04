@@ -116,7 +116,7 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
                 global_filters['macro_df'] = ctx.macro_data
                 global_filters['geo_df'] = ctx.geo_data
 
-                df = apply_advanced_filters(df, ctx.index_data, global_filters)
+                df = apply_advanced_filters(df, global_filters)
 
                 df['final_signal'] = np.where(df['filter_pass'], df['signal'], 0)
                 if 'position_diff' not in df.columns:
