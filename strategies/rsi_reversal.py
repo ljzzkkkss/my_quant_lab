@@ -112,7 +112,7 @@ class RSIStrategy(Strategy):
 
     def generate_signals(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
         lower = self.get_param('lower_bound', kwargs)
-        upper = self.get_paramt('upper_bound', kwargs)
+        upper = self.get_param('upper_bound', kwargs)
         period = self.get_param('rsi_period', kwargs)
 
         return apply_rsi_strategy(df, lower, upper, period)

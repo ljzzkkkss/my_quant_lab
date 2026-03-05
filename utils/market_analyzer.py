@@ -163,7 +163,7 @@ class MarketAnalyzer:
     def generate_diagnostic_report(df: pd.DataFrame, env_filters: dict = None) -> dict:
         if df is None or df.empty or len(df) < 60: return None
         current_price = df['收盘'].iloc[-1]
-        sup, res = MarketAnalyzer.find_support_resistance(df)
+        res, sup = MarketAnalyzer.find_support_resistance(df)
         vp_analysis = MarketAnalyzer.analyze_volume_price(df)
         patterns = MarketAnalyzer.detect_kline_patterns(df)
 

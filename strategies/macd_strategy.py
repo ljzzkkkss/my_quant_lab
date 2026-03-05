@@ -1,5 +1,5 @@
 """
-MACD 趋势策略
+MACD趋势策略
 
 策略逻辑:
     - DIF 上穿 DEA（金叉）：买入
@@ -68,7 +68,7 @@ def apply_macd_strategy(
 
 @auto_register
 class MACDStrategy(Strategy):
-    """MACD 趋势策略（面向对象版本）"""
+    """MACD趋势策略（面向对象版本）"""
 
     def __init__(
         self,
@@ -112,7 +112,7 @@ class MACDStrategy(Strategy):
 
     @property
     def name(self) -> str:
-        return "MACD 趋势策略"
+        return "MACD趋势策略"
 
     @property
     def description(self) -> str:
