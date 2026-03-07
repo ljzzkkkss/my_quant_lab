@@ -140,7 +140,7 @@ def render_auto_tab(symbol, start_date, end_date, initial_capital, global_filter
                 progress_bar = st.progress(0, text="🚀 正在多进程扫描参数空间...")
                 results_df, desc_map = optimize_strategy(
                     train_raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                    opt_keys, grid_values, start_date, end_date,
+                    opt_keys, grid_values,
                     progress_callback=lambda p: progress_bar.progress(p, text=f"扫描进度: {int(p * 100)}%")
                 )
                 progress_bar.empty()

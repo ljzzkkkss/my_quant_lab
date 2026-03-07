@@ -114,8 +114,7 @@ def render_batch_tab(display_list, start_date, end_date, initial_capital, global
                 if raw is not None and not raw.empty:
                     res_df, desc_map = optimize_strategy(
                         raw, strategy_type, initial_capital, global_filters, pos_ratio,
-                        opt_keys, grid_values, start_date, end_date,
-                        preloaded_index=ctx.index_data
+                        opt_keys, grid_values
                     )
 
                     if res_df is not None and not res_df.empty:

@@ -75,7 +75,6 @@ def optimize_strategy(
         raw_data: pd.DataFrame, strategy_type: str, initial_capital: float,
         global_filters: Dict, position_ratio: float,
         param_grid_keys: List[str], param_grid_values: List[List[Any]],
-        start_date: str, end_date: str,
         use_parallel: bool = True, max_workers: Optional[int] = None,
         progress_callback: Optional[Callable[[float], None]] = None
 ) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
@@ -142,5 +141,5 @@ def optimize_strategy_sequential(
 ) -> Tuple[Optional[pd.DataFrame], str, str]:
     return optimize_strategy(
         raw_data, strategy_type, initial_capital, global_filters, position_ratio,
-        param_grid_keys, param_grid_values, start_date, end_date, use_parallel=False
+        param_grid_keys, param_grid_values, use_parallel=False
     )
