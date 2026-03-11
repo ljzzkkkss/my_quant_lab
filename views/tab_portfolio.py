@@ -73,145 +73,150 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
                         key=f"p_{strategy_type}_{p_name}"
                     )
 
-    # 🚀 终极进化：千股千策路由字典 (向导式配置)
-    with st.expander("🗺️ 高阶玩法：千股千策 (向导式配置)", expanded=False):
-        st.markdown("""
-        **何为千股千策？** 为组合内的不同股票配置专属的“策略”、“参数”甚至**“专属共振板块”**。
-        *(注：未配置的股票，将默认采用全局策略与全局板块配置)*
-        """)
-        use_routing = st.toggle("🔌 启用策略路由引擎", value=False, key="p_use_route")
+        # ==========================================
+        # 🚀 模块对调：先选定轮动池，再配置千股千策！
+        # ==========================================
+        with st.expander("🎯 1. 账户与资金分配模型 (先选定股票池)", expanded=True):
+            c_l, c_m, c_r, c_4 = st.columns([2, 1, 1.5, 1])
+            with c_l: selected_pool = st.multiselect("选取轮动池", display_list, default=display_list[:5], key="p_pool")
+            with c_m: max_pos = st.slider("最大持仓数", 1, 10, 5, key="p_max_pos")
+            with c_r: alloc_method = st.selectbox("资金分配模型", ["等权资金模型", "ATR 风险平价模型"], key="p_alloc")
+            with c_4:
+                st.write("")
+                is_dynamic = st.toggle("开启动态复利", value=True)
 
-        if 'p_routing_dict' not in st.session_state:
-            st.session_state['p_routing_dict'] = {}
+        # 🚀 终极进化：千股千策路由字典 (向导式配置)
+        with st.expander("🗺️ 2. 高阶玩法：千股千策 (向导式配置)", expanded=False):
+            st.markdown("""
+            **何为千股千策？** 为组合内的不同股票配置专属的“策略”、“参数”甚至**“专属共振板块”**。
+            *(注：未配置的股票，将默认采用全局策略与全局板块配置)*
+            """)
+            use_routing = st.toggle("🔌 启用策略路由引擎", value=False, key="p_use_route")
 
-        routing_dict = st.session_state['p_routing_dict']
+            if 'p_routing_dict' not in st.session_state:
+                st.session_state['p_routing_dict'] = {}
 
-        if use_routing:
-            # 🚀 彻底修复策略列表读取：强制精准读取底层 registry 键值！
-            try:
-                strat_list = StrategyRegistry.list_strategies()
-            except Exception:
-                # 终极防呆兜底
-                strat_list = ["双均线动能策略", "MACD趋势策略"]
+            routing_dict = st.session_state['p_routing_dict']
 
-            # ---------------- 区域 A：展示已配置的规则 ----------------
-            if routing_dict:
-                st.write("📋 **当前已生效的专属路由规则：**")
-                display_data = []
-                for sym, rule in routing_dict.items():
-                    strat_obj = StrategyRegistry.get(rule['strategy'])
-                    param_desc_list = []
-                    if strat_obj:
-                        for k, v in rule['params'].items():
-                            p_def = strat_obj.params.get(k)
-                            desc = p_def.description if p_def else k
-                            param_desc_list.append(f"{desc}: {v}")
-                    param_str = " | ".join(param_desc_list) if param_desc_list else "默认参数"
-
-                    # 🚀 展示专属板块
-                    sec_str = rule.get('sector_code', '')
-                    sec_display = sec_str if sec_str else "跟随全局"
-
-                    display_data.append(
-                        {"标的代码": sym, "专属策略": rule['strategy'], "专属板块": sec_display, "参数配置": param_str})
-
-                st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
-
-                if st.button("🗑️ 清空所有规则", key="clear_routes"):
-                    st.session_state['p_routing_dict'] = {}
-                    st.rerun()
-            else:
-                st.info("💡 当前未配置任何专属路由，所有股票将使用上方的全局策略与板块。")
-
-            st.divider()
-
-            # ---------------- 区域 B：魔法动态配置表单 ----------------
-            st.write("🛠️ **新增 / 修改专属规则**")
-            with st.container(border=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    target_sym = st.text_input("1. 输入目标股票代码 (如 600519)", key="rt_sym")
-
-                existing_rule = routing_dict.get(target_sym) if target_sym else None
-
-                default_strat = existing_rule['strategy'] if existing_rule else strategy_type
+            if use_routing:
                 try:
-                    strat_index = strat_list.index(default_strat)
-                except ValueError:
-                    strat_index = 0
+                    strat_list = StrategyRegistry.list_strategies()
+                except Exception:
+                    strat_list = ["双均线动能策略", "MACD趋势策略"]
 
-                with col2:
-                    target_strat = st.selectbox("2. 为该股指派专属策略", options=strat_list, index=strat_index,
-                                                key="rt_strat")
+                # ---------------- 区域 A：展示已配置的规则 ----------------
+                if routing_dict:
+                    st.write("📋 **当前已生效的专属路由规则：**")
+                    display_data = []
+                    for sym, rule in routing_dict.items():
+                        strat_obj = StrategyRegistry.get(rule['strategy'])
+                        param_desc_list = []
+                        if strat_obj:
+                            for k, v in rule['params'].items():
+                                p_def = strat_obj.params.get(k)
+                                desc = p_def.description if p_def else k
+                                param_desc_list.append(f"{desc}: {v}")
+                        param_str = " | ".join(param_desc_list) if param_desc_list else "默认参数"
 
-                # 🚀 核心新增：专属覆盖全局板块
-                st.write("3. 覆盖全局环境 (可选)：")
-                target_sector = st.text_input("专属板块 ETF 代码 (留空则默认跟随侧边栏全局板块)",
-                                              value=existing_rule.get('sector_code', '') if existing_rule else "",
-                                              key="rt_sector")
+                        sec_str = rule.get('sector_code', '')
+                        sec_display = sec_str if sec_str else "跟随全局"
 
-                new_params = {}
-                if target_strat:
-                    strat_instance = StrategyRegistry.get(target_strat)
-                    if strat_instance and strat_instance.params:
-                        st.write(f"4. 调节【{target_strat}】的实战参数：")
-                        p_cols = st.columns(min(3, len(strat_instance.params)))
-                        col_idx = 0
-                        for p_name, p_def in strat_instance.params.items():
-                            with p_cols[col_idx % len(p_cols)]:
-                                ui_key = f"rt_{target_sym}_{target_strat}_{p_name}"
+                        display_data.append(
+                            {"标的代码": sym, "专属策略": rule['strategy'], "专属板块": sec_display,
+                             "参数配置": param_str})
 
-                                if existing_rule and existing_rule['strategy'] == target_strat and p_name in \
-                                        existing_rule['params']:
-                                    default_val = existing_rule['params'][p_name]
-                                else:
-                                    default_val = p_def.default
+                    st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
 
-                                if isinstance(p_def.default, bool):
-                                    new_params[p_name] = st.toggle(f"{p_def.description or p_name}", value=default_val,
-                                                                   key=ui_key)
-                                else:
-                                    step = p_def.step if p_def.step else 1
-                                    min_val = type(p_def.default)(p_def.min_val) if p_def.min_val is not None else None
-                                    max_val = type(p_def.default)(p_def.max_val) if p_def.max_val is not None else None
-                                    new_params[p_name] = st.number_input(
-                                        p_def.description or p_name,
-                                        min_value=min_val, max_value=max_val, value=default_val, step=step,
-                                        key=ui_key
-                                    )
-                            col_idx += 1
-                    else:
-                        st.info("ℹ️ 该策略无需调节额外参数。")
+                    if st.button("🗑️ 清空所有规则", key="clear_routes"):
+                        st.session_state['p_routing_dict'] = {}
+                        st.rerun()
+                else:
+                    st.info("💡 当前未配置任何专属路由，所有股票将使用上方的全局策略与板块。")
 
-                c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 2])
-                with c_btn1:
-                    if st.button("💾 保存/覆盖", type="primary", use_container_width=True):
-                        if target_sym:
-                            st.session_state['p_routing_dict'][target_sym] = {
-                                "strategy": target_strat,
-                                "sector_code": target_sector.strip(),  # 🚀 保存独立板块代码
-                                "params": new_params
-                            }
-                            st.rerun()
+                st.divider()
+
+                # ---------------- 区域 B：魔法动态配置表单 ----------------
+                st.write("🛠️ **新增 / 修改专属规则**")
+                with st.container(border=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        # 🚀 完美联动：这里的下拉框选项，直接变成了你在上面选中的 selected_pool！
+                        safe_pool = selected_pool if selected_pool else display_list[:1]
+                        selected_disp = st.selectbox("1. 从上方轮动池选取股票", options=safe_pool, index=0,
+                                                     key="rt_sym_box")
+                        target_sym = selected_disp.split('(')[-1].replace(')', '').strip() if selected_disp else ""
+
+                    existing_rule = routing_dict.get(target_sym) if target_sym else None
+
+                    default_strat = existing_rule['strategy'] if existing_rule else strategy_type
+                    try:
+                        strat_index = strat_list.index(default_strat)
+                    except ValueError:
+                        strat_index = 0
+
+                    with col2:
+                        target_strat = st.selectbox("2. 为该股指派专属策略", options=strat_list, index=strat_index,
+                                                    key="rt_strat")
+
+                    st.write("3. 覆盖全局环境 (可选)：")
+                    target_sector = st.text_input("专属板块 ETF 代码 (留空则默认跟随侧边栏全局板块)",
+                                                  value=existing_rule.get('sector_code', '') if existing_rule else "",
+                                                  key="rt_sector")
+
+                    new_params = {}
+                    if target_strat:
+                        strat_instance = StrategyRegistry.get(target_strat)
+                        if strat_instance and strat_instance.params:
+                            st.write(f"4. 调节【{target_strat}】的实战参数：")
+                            p_cols = st.columns(min(3, len(strat_instance.params)))
+                            col_idx = 0
+                            for p_name, p_def in strat_instance.params.items():
+                                with p_cols[col_idx % len(p_cols)]:
+                                    ui_key = f"rt_{target_sym}_{target_strat}_{p_name}"
+
+                                    if existing_rule and existing_rule['strategy'] == target_strat and p_name in \
+                                            existing_rule['params']:
+                                        default_val = existing_rule['params'][p_name]
+                                    else:
+                                        default_val = p_def.default
+
+                                    if isinstance(p_def.default, bool):
+                                        new_params[p_name] = st.toggle(f"{p_def.description or p_name}",
+                                                                       value=default_val, key=ui_key)
+                                    else:
+                                        step = p_def.step if p_def.step else 1
+                                        min_val = type(p_def.default)(
+                                            p_def.min_val) if p_def.min_val is not None else None
+                                        max_val = type(p_def.default)(
+                                            p_def.max_val) if p_def.max_val is not None else None
+                                        new_params[p_name] = st.number_input(
+                                            p_def.description or p_name,
+                                            min_value=min_val, max_value=max_val, value=default_val, step=step,
+                                            key=ui_key
+                                        )
+                                col_idx += 1
                         else:
-                            st.warning("⚠️ 请输入有效的股票代码！")
-                with c_btn2:
-                    if target_sym and target_sym in st.session_state.get('p_routing_dict', {}):
-                        if st.button("❌ 移除配置", use_container_width=True):
-                            del st.session_state['p_routing_dict'][target_sym]
-                            st.rerun()
+                            st.info("ℹ️ 该策略无需调节额外参数。")
 
-        routing_dict = st.session_state.get('p_routing_dict', {}) if use_routing else {}
+                    c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 2])
+                    with c_btn1:
+                        if st.button("💾 保存/覆盖", type="primary", use_container_width=True):
+                            if target_sym:
+                                st.session_state['p_routing_dict'][target_sym] = {
+                                    "strategy": target_strat,
+                                    "sector_code": target_sector.strip(),
+                                    "params": new_params
+                                }
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ 请输入有效的股票代码！")
+                    with c_btn2:
+                        if target_sym and target_sym in st.session_state.get('p_routing_dict', {}):
+                            if st.button("❌ 移除配置", use_container_width=True):
+                                del st.session_state['p_routing_dict'][target_sym]
+                                st.rerun()
 
-    with st.expander("🎯 账户与资金分配模型", expanded=True):
-        c_l, c_m, c_r, c_4 = st.columns([2, 1, 1.5, 1])
-        with c_l: selected_pool = st.multiselect("选取轮动池", display_list, default=display_list[:5], key="p_pool")
-        with c_m: max_pos = st.slider("最大持仓数", 1, 10, 5, key="p_max_pos")
-        with c_r: alloc_method = st.selectbox("资金分配模型", ["等权资金模型", "ATR 风险平价模型"], key="p_alloc")
-        with c_4:
-            st.write("")
-            is_dynamic = st.toggle("开启动态复利", value=True)
-
+            routing_dict = st.session_state.get('p_routing_dict', {}) if use_routing else {}
     btn_ph = st.empty()
     run_port = btn_ph.button("🚀 启动全量轮动回测", type="primary", use_container_width=True, key="p_run")
 

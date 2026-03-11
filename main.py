@@ -1,6 +1,7 @@
 import streamlit as st
-from datetime import datetime, timedelta
 import os
+from datetime import datetime, timedelta
+from views.tab_arena import render_arena_tab
 from utils.logger import logger
 from utils.workspace import save_workspace, load_workspace
 from utils.stock_info import get_a_share_list_display as get_all_stock_list
@@ -15,11 +16,11 @@ ui_conf = get_ui_config()
 data_conf = get_data_config()
 filter_conf = get_filter_config()
 
-st.set_page_config(page_title=ui_conf.PAGE_TITLE, page_icon=ui_conf.PAGE_ICON, layout=ui_conf.LAYOUT_MODE)
 
 logger.info("💻 Web UI 界面开始渲染...")
 
 def main():
+    st.set_page_config(page_title=ui_conf.PAGE_TITLE, page_icon=ui_conf.PAGE_ICON, layout=ui_conf.LAYOUT_MODE)
     st.title("🚀 极客量化实验室 - 全维度寻优系统")
 
     # 🚀 2. 启动时自动恢复工作区配置到内存
@@ -177,18 +178,31 @@ def main():
     display_list = get_all_stock_list()
     default_idx = next((i for i, s in enumerate(display_list) if "600519" in s), 0)
 
-    tab_manual, tab_auto, tab_batch, tab_port = st.tabs(["📊 手动回测看板", "🤖 机器参数寻优", "📡 雷达全场扫描", "🧺 组合轮动"])
+    # 🚀 增加了第 5 个 Tab：策略角斗场
+    tab_manual, tab_auto, tab_batch, tab_port, tab_arena = st.tabs([
+        "📊 手动回测看板", "🤖 机器参数寻优", "📡 雷达全场扫描", "🧺 组合轮动", "🏟️ 策略角斗场"
+    ])
 
     with tab_manual:
-        sym_manual = st.selectbox("🔍 选择分析标的", display_list, index=default_idx, key="m_s").split('(')[-1].replace(')','').strip()
-        render_manual_tab(sym_manual, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters, strategy_type)
+        sym_manual = st.selectbox("🔍 选择分析标的", display_list, index=default_idx, key="m_s").split('(')[-1].replace(
+            ')', '').strip()
+        render_manual_tab(sym_manual, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital,
+                          global_filters, strategy_type)
     with tab_auto:
-        sym_auto = st.selectbox("🔍 选择分析标的", display_list, index=default_idx, key="a_s").split('(')[-1].replace(')','').strip()
-        render_auto_tab(sym_auto, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters, strategy_type)
+        sym_auto = st.selectbox("🔍 选择分析标的", display_list, index=default_idx, key="a_s").split('(')[-1].replace(
+            ')', '').strip()
+        render_auto_tab(sym_auto, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital,
+                        global_filters, strategy_type)
     with tab_batch:
-        render_batch_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters, strategy_type)
+        render_batch_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital,
+                         global_filters, strategy_type)
     with tab_port:
-        render_portfolio_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters, strategy_type)
+        render_portfolio_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital,
+                             global_filters, strategy_type)
+    # 🚀 渲染新增的角斗场
+    with tab_arena:
+        render_arena_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters)
+
 
 if __name__ == "__main__":
     main()

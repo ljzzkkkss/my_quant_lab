@@ -8,7 +8,7 @@ import itertools
 from typing import Dict, List, Tuple, Any, Optional, Callable
 from multiprocessing import cpu_count
 from functools import partial
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from backtest.engine import run_backtest
 from configs.settings import get_trading_config, get_backtest_config
 from strategies.base import StrategyRegistry
@@ -80,7 +80,7 @@ def optimize_strategy(
 ) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
 
     # 🚀 注意：前端在调起这个函数前，已经将 sector_df, macro_df, geo_df 塞入了 global_filters 字典中。
-    # 它们会被底层的 ProcessPoolExecutor 自动封包，序列化后直接发射给所有并发子进程，无需再改动参数列表！
+    # 它们会被底层的 ThreadPoolExecutor 自动封包，序列化后直接发射给所有并发子进程，无需再改动参数列表！
 
     # 真正的 N 维网格笛卡尔积
     combinations = list(itertools.product(*param_grid_values))
@@ -111,7 +111,7 @@ def optimize_strategy(
             initial_capital=initial_capital, position_ratio=position_ratio
         )
 
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = {executor.submit(eval_func, p_dict): p_dict for p_dict in valid_combinations}
             total = len(futures)
             for i, future in enumerate(as_completed(futures)):
