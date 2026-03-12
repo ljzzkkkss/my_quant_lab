@@ -45,9 +45,19 @@ def render_arena_tab(display_list, start_date, end_date, initial_capital, global
             )
 
     btn_ph = st.empty()
-    run_btn = btn_ph.button("🔥 开启角斗", type="primary", use_container_width=True, key="arena_run")
+    # 🚀 新增：从内存中探针按钮的运行状态
+    is_running = st.session_state.get('arena_run_running', False)
 
-    if run_btn:
+    if is_running:
+        # 如果正在运行，强制渲染一个置灰的不可点击按钮
+        run_btn = btn_ph.button("⏳ 引擎并发验算中...", disabled=True, use_container_width=True,
+                                key="arena_run_disabled")
+    else:
+        # 正常状态
+        run_btn = btn_ph.button("🔥 开启角斗", type="primary", use_container_width=True, key="arena_run")
+
+    # 🚀 必须同时满足被点击，且当前没有在运行
+    if run_btn and not is_running:
         if not target_symbol:
             st.warning("⚠️ 请输入股票代码！")
             return

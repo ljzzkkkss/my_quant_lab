@@ -11,6 +11,7 @@ from views.tab_batch import render_batch_tab
 from views.tab_portfolio import render_portfolio_tab
 from configs.settings import get_ui_config,get_data_config,get_filter_config
 from strategies.base import StrategyRegistry
+from views.tab_realtime import render_realtime_tab
 
 ui_conf = get_ui_config()
 data_conf = get_data_config()
@@ -178,9 +179,8 @@ def main():
     display_list = get_all_stock_list()
     default_idx = next((i for i, s in enumerate(display_list) if "600519" in s), 0)
 
-    # 🚀 增加了第 5 个 Tab：策略角斗场
-    tab_manual, tab_auto, tab_batch, tab_port, tab_arena = st.tabs([
-        "📊 手动回测看板", "🤖 机器参数寻优", "📡 雷达全场扫描", "🧺 组合轮动", "🏟️ 策略角斗场"
+    tab_manual, tab_auto, tab_batch, tab_port, tab_arena, tab_realtime = st.tabs([
+        "📊 手动回测看板", "🤖 机器参数寻优", "📡 雷达全场扫描", "🧺 组合轮动", "🏟️ 策略角斗场", "⚡ 盘中实时狙击"
     ])
 
     with tab_manual:
@@ -203,6 +203,9 @@ def main():
     with tab_arena:
         render_arena_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters)
 
+    # 🚀 渲染新增的 实时狙击 Tab
+    with tab_realtime:
+        render_realtime_tab(display_list, start_date.strftime('%Y%m%d'), end_date.strftime('%Y%m%d'), initial_capital, global_filters, strategy_type)
 
 if __name__ == "__main__":
     main()

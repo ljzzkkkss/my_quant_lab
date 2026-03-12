@@ -1,9 +1,10 @@
-import json
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+import json
+import os
 from strategies.advanced_filter import apply_advanced_filters
 from backtest.engine import run_portfolio_backtest
 from utils.data_context import DataContext
@@ -14,6 +15,24 @@ from utils.ui_helpers import ui_button_lock
 
 bt_conf = get_backtest_config()
 
+# 定义配置文件的永久保存路径（保存在项目根目录的 configs 文件夹下）
+ROUTING_FILE = "configs/my_routing_dict.json"
+
+def load_routing_config():
+    """从硬盘读取千股千策配置"""
+    if os.path.exists(ROUTING_FILE):
+        try:
+            with open(ROUTING_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_routing_config(data_dict):
+    """将千股千策配置写死到硬盘"""
+    os.makedirs(os.path.dirname(ROUTING_FILE), exist_ok=True)
+    with open(ROUTING_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data_dict, f, ensure_ascii=False, indent=4)
 
 def render_portfolio_tab(display_list, start_date, end_date, initial_capital, global_filters, strategy_type):
     def calculate_performance_metrics(df, initial_cap):
@@ -94,7 +113,7 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
             use_routing = st.toggle("🔌 启用策略路由引擎", value=False, key="p_use_route")
 
             if 'p_routing_dict' not in st.session_state:
-                st.session_state['p_routing_dict'] = {}
+                st.session_state['p_routing_dict'] = load_routing_config()
 
             routing_dict = st.session_state['p_routing_dict']
 
@@ -129,6 +148,8 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
 
                     if st.button("🗑️ 清空所有规则", key="clear_routes"):
                         st.session_state['p_routing_dict'] = {}
+                        # 🚀 新增：同步清空硬盘文件！
+                        save_routing_config({})
                         st.rerun()
                 else:
                     st.info("💡 当前未配置任何专属路由，所有股票将使用上方的全局策略与板块。")
@@ -207,6 +228,8 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
                                     "sector_code": target_sector.strip(),
                                     "params": new_params
                                 }
+                                # 🚀 新增：同步写死到硬盘！
+                                save_routing_config(st.session_state['p_routing_dict'])
                                 st.rerun()
                             else:
                                 st.warning("⚠️ 请输入有效的股票代码！")
@@ -214,6 +237,8 @@ def render_portfolio_tab(display_list, start_date, end_date, initial_capital, gl
                         if target_sym and target_sym in st.session_state.get('p_routing_dict', {}):
                             if st.button("❌ 移除配置", use_container_width=True):
                                 del st.session_state['p_routing_dict'][target_sym]
+                                # 🚀 新增：同步写死到硬盘！
+                                save_routing_config(st.session_state['p_routing_dict'])
                                 st.rerun()
 
             routing_dict = st.session_state.get('p_routing_dict', {}) if use_routing else {}

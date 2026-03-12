@@ -11,13 +11,11 @@ import streamlit as st
 import baostock as bs
 import akshare as ak
 from datetime import datetime, timedelta
+from utils.logger import logger
 from typing import Optional
-import logging
 import pytz
 from configs.settings import get_data_config
 data_conf = get_data_config()
-
-logger = logging.getLogger(__name__)
 
 
 def format_baostock_code(symbol: str) -> str:
@@ -331,3 +329,57 @@ def get_daily_hfq_data(symbol: str, start_date: str, end_date: str, cache_dir: s
     res_df = local_df.loc[mask]
 
     return res_df if not res_df.empty else None
+
+
+def get_realtime_stitched_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    终极实战数据拉取：历史日线 + 盘中实时快照缝合
+    """
+    # 1. 拉取历史数据（这里调用你原有的 get_daily_hfq_data 方法）
+    # 注意：在 14:50 时，这个接口返回的数据最后一天通常是昨天
+    df = get_daily_hfq_data(symbol, start_date, end_date)
+
+    if df is None or df.empty:
+        return df
+
+    # 2. 判断今天是否在交易时间（此处为简化版判断，实盘需严格判断交易日）
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    current_hour = datetime.now().hour
+
+    # 只有在盘中（比如9点到15点），且今天的数据还没生成时，才进行缝合
+    if today_str not in df.index and 9 <= current_hour <= 15:
+        try:
+            # 🚀 瞬间拉取全市场 5000 只股票的实时切片（耗时不到1秒）
+            spot_df = ak.stock_zh_a_spot_em()
+
+            # 提取纯数字代码匹配 (如 '600522')
+            clean_sym = symbol.split('(')[-1].replace(')', '').strip()
+            stock_spot = spot_df[spot_df['代码'] == clean_sym]
+
+            if not stock_spot.empty:
+                # 提取实时五要素
+                current_price = stock_spot['最新价'].values[0]
+                open_price = stock_spot['今开'].values[0]
+                high_price = stock_spot['最高'].values[0]
+                low_price = stock_spot['最低'].values[0]
+                volume = stock_spot['成交量'].values[0]
+
+                # 如果停牌或未开盘，价格可能为 NaN
+                if pd.notna(current_price):
+                    # 🧵 组装出“今天”的虚拟 K 线
+                    today_bar = pd.DataFrame({
+                        '开盘': [open_price],
+                        '收盘': [current_price],  # 用最新价代替今天的收盘价
+                        '最高': [high_price],
+                        '最低': [low_price],
+                        '成交量': [volume]
+                    }, index=[pd.to_datetime(today_str)])
+
+                    # 将这根实时 K 线缝合到历史 DataFrame 的尾部
+                    df = pd.concat([df, today_bar])
+                    logger.info(f"🧵 成功缝合 {symbol} 实时数据: 当前价 {current_price}")
+
+        except Exception as e:
+            logger.error(f"❌ 实时数据缝合失败: {e}")
+
+    return df
